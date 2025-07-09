@@ -1,50 +1,235 @@
-/* 全体リセット＆ベース */
-* {
-  box-sizing: border-box;
+/* リセット・ベーススタイル */
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
   margin: 0;
   padding: 0;
+  border: 0;
+  font-size: 100%;
+  font: inherit;
+  vertical-align: baseline;
 }
 body {
-  font-family: 'Noto Sans JP', sans-serif;
-  background-color: #f0f2f5;
-  color: #333;
-  line-height: 1.6;
+  font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+  background: #f4f8fb;
+  color: #222;
+  line-height: 1.7;
 }
-
-/* 中央寄せコンテナ */
 .container {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 0 1em;
+  padding: 24px 16px;
 }
-
-/* ヘッダー */
 .site-header {
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background: #2563eb;
+  color: #fff;
+  padding: 12px 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
 }
-.site-header .container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1em 0;
-}
-.logo {
-  font-size: 1.5em;
-  font-weight: 700;
+.site-header .logo a {
+  color: #fff;
+  font-weight: bold;
+  font-size: 1.3rem;
+  text-decoration: none;
 }
 .site-header nav ul {
-  list-style: none;
   display: flex;
-  gap: 1em;
+  gap: 1.5em;
+  list-style: none;
+  margin-top: 8px;
 }
 .site-header nav a {
-  color: #333;
+  color: #e0e7ef;
   text-decoration: none;
   font-weight: 500;
+  transition: color .2s;
 }
 .site-header nav a:hover {
+  color: #fff;
+}
+
+/********************
+  カラーパレット
+********************/
+:root {
+  --ldp: #2563eb;
+  --ish: #10b981;
+  --dpp: #f59e42;
+  --san: #ec4899;
+  --gray-bg: #f4f8fb;
+  --table-stripe: #eaf1fa;
+  --shadow: 0 2px 8px rgba(30,50,100,0.08);
+}
+
+/********************
+  パーティーカード
+********************/
+.party-intro-flex {
+  display: flex;
+  gap: 1rem;
+  margin: 24px 0 16px 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.party-card {
+  flex: 1 1 180px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 18px 10px 12px 10px;
+  text-align: center;
+  margin: 0 4px;
+  min-width: 150px;
+  transition: transform .18s, box-shadow .18s;
+  position: relative;
+  border: 2px solid transparent;
+}
+.party-card .icon {
+  font-size: 2.1rem;
+  margin-bottom: 4px;
+}
+.party-card .party-name {
+  font-weight: bold;
+  font-size: 1.08rem;
+  margin-bottom: 2px;
+}
+.party-card .catch {
+  font-size: 0.98rem;
+  color: #555;
+}
+.party-card.ldp { border-color: var(--ldp); }
+.party-card.ish { border-color: var(--ish); }
+.party-card.dpp { border-color: var(--dpp); }
+.party-card.san { border-color: var(--san); }
+.party-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 4px 18px rgba(37,99,235,0.13);
+  z-index: 2;
+}
+
+/********************
+  比較表デザイン
+********************/
+.policy-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 24px 0 18px 0;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  font-size: 1rem;
+}
+.policy-table th, .policy-table td {
+  padding: 12px 9px;
+  text-align: center;
+}
+.policy-table thead th {
+  background: #2563eb;
+  color: #fff;
+  font-weight: bold;
+  font-size: 1.05rem;
+}
+.policy-table tbody tr:nth-child(even) {
+  background: var(--table-stripe);
+}
+.policy-table th:first-child, .policy-table td:first-child {
+  background: #f1f5fb;
+  font-weight: bold;
+  color: #2563eb;
+}
+.policy-table .ldp { color: var(--ldp); font-weight: 500; }
+.policy-table .ish { color: var(--ish); font-weight: 500; }
+.policy-table .dpp { color: var(--dpp); font-weight: 500; }
+.policy-table .san { color: var(--san); font-weight: 500; }
+.policy-table .mini { font-size: 0.92em; }
+
+/********************
+  Q&A/リアル/出典
+********************/
+.qa-section, .real-section, .source-section {
+  margin: 32px 0 18px 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 18px 18px 10px 18px;
+}
+.qa-section h2, .real-section h2, .source-section h2 {
+  font-size: 1.12rem;
+  color: #2563eb;
+  margin-bottom: 10px;
+}
+.qa-section dl dt {
+  font-weight: bold;
+  margin-top: 10px;
+  color: #2563eb;
+}
+.qa-section dl dd {
+  margin-left: 0;
+  margin-bottom: 8px;
+  color: #222;
+}
+.real-section ul, .source-section ul {
+  margin-left: 18px;
+  color: #444;
+}
+
+/********************
+  ナビゲーション
+********************/
+nav {
+  margin: 24px 0 0 0;
+  text-align: center;
+}
+nav a {
+  color: #2563eb;
+  margin: 0 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color .2s, text-decoration .2s;
+}
+nav a:hover {
+  color: #10b981;
   text-decoration: underline;
+}
+
+/********************
+  その他
+********************/
+.lead {
+  font-size: 1.13rem;
+  color: #2563eb;
+  margin-bottom: 16px;
+  margin-top: 6px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 700px) {
+  .container {
+    padding: 18px 3vw;
+  }
+  .party-intro-flex {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .party-card {
+    margin: 0 0 8px 0;
+  }
+  .policy-table th, .policy-table td {
+    padding: 8px 3px;
+    font-size: 0.98em;
+  }
 }
 
 /* 紹介セクション */
