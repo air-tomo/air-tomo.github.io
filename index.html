@@ -1,5 +1,133 @@
-<h1>政治比較サイト!!</h1>
-<html>このサイトは、主要な政党の政策を分かりやすく比較し、投票の判断材料を提供することを目的としています。</html>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4党政策比較サイト</title>
+  <meta name="description" content="主要4党の政策を客観的に比較。投票の判断材料を提供するサイト。">
+  <style>
+    body {
+      font-family: 'Segoe UI', 'ヒラギノ角ゴ ProN W3', 'Hiragino Kaku Gothic ProN', 'メイリオ', meiryo, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f6f8fa;
+      color: #1a2233;
+      line-height: 1.7;
+    }
+    header {
+      background: linear-gradient(90deg, #2a3e7b 0%, #4e72c7 100%);
+      color: #fff;
+      border-bottom: 0;
+      padding: 32px 0 16px 0;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(42,62,123,0.07);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.1em;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+    .description {
+      margin: 30px auto 10px auto;
+      max-width: 700px;
+      font-size: 1.13em;
+      color: #334;
+      text-align: center;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(42,62,123,0.04);
+      padding: 18px 16px 14px 16px;
+    }
+    .ad-placeholder {
+      margin: 32px auto 32px auto;
+      max-width: 350px;
+      min-height: 90px;
+      background: linear-gradient(90deg, #e9e9ef 0%, #f7f7fb 100%);
+      border: 2px dashed #b8b8d1;
+      color: #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.08em;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 1px 6px rgba(42,62,123,0.05);
+      letter-spacing: 0.02em;
+    }
+    h2 {
+      margin-top: 54px;
+      color: #2a3e7b;
+      font-size: 1.35em;
+      border-left: 6px solid #4e72c7;
+      padding-left: 12px;
+      background: linear-gradient(90deg, #e7eaf6 0%, #f7f9fc 100%);
+      border-radius: 5px;
+      display: inline-block;
+      margin-bottom: 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 0 auto 36px auto;
+      background: #fff;
+      box-shadow: 0 2px 14px rgba(42,62,123,0.06);
+      max-width: 940px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    thead tr {
+      background: linear-gradient(90deg, #d6e0fa 0%, #f6f8fa 100%);
+    }
+    th, td {
+      padding: 13px 10px;
+      border-bottom: 1px solid #e2e6f0;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      font-weight: bold;
+      color: #2a3e7b;
+      background: #f5f7fa;
+      border-bottom: 2px solid #b8b8d1;
+    }
+    tbody tr:nth-child(even) {
+      background: #f5f7fa;
+    }
+    tbody tr:hover {
+      background: #e4ecfa;
+      transition: background 0.2s;
+    }
+    td strong {
+      color: #4e72c7;
+    }
+    @media (max-width: 900px) {
+      table { font-size: 0.98em; }
+      .description { font-size: 1em; }
+      th, td { padding: 10px 5px; }
+    }
+    @media (max-width: 600px) {
+      table, th, td { font-size: 0.92em; }
+      .description { font-size: 0.97em; }
+      h2 { font-size: 1.1em; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>4党政策比較サイト</h1>
+  </header>
+  <div class="description">
+    このサイトは、主要な政党（自民・維新・国民民主・参政）の政策を客観的に比較し、<br>
+    投票の判断材料を分かりやすく提供することを目的としています。<br>
+    <span style="color:#2a3e7b; font-weight:600;">信頼できる情報とシンプルなデザインで、あなたの選択をサポートします。</span>
+  </div>
+  <div class="ad-placeholder">
+    【広告枠】ここに広告が入ります<br>
+    （例：Googleアドセンス、A8.net など）
+  </div>
+
 <h2 style="margin-top: 40px;">争点2：外交・安全保障</h2>
 <table border="1" style="width:100%; border-collapse: collapse;">
   <thead>
