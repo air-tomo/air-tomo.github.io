@@ -31,7 +31,7 @@ body {
   padding: 24px 16px;
 }
 .site-header {
-  background: #2563eb;
+  background: var(--main-color);
   color: #fff;
   padding: 12px 0;
   box-shadow: 0 2px 6px rgba(0,0,0,0.04);
@@ -49,7 +49,7 @@ body {
   margin-top: 8px;
 }
 .site-header nav a {
-  color: #e0e7ef;
+  color: #e0ffe2;
   text-decoration: none;
   font-weight: 500;
   transition: color .2s;
@@ -62,8 +62,9 @@ body {
   カラーパレット
 ********************/
 :root {
-  --ldp: #2563eb;
-  --ish: #10b981;
+  --main-color: #10b981;
+  --ldp: #10b981;
+  --ish: #2563eb;
   --dpp: #f59e42;
   --san: #ec4899;
   --gray-bg: #f4f8fb;
@@ -107,7 +108,7 @@ body {
   font-size: 0.98rem;
   color: #555;
 }
-.party-card.ldp { border-color: var(--ldp); }
+.party-card.ldp { border-color: var(--main-color); }
 .party-card.ish { border-color: var(--ish); }
 .party-card.dpp { border-color: var(--dpp); }
 .party-card.san { border-color: var(--san); }
@@ -136,7 +137,7 @@ body {
   text-align: center;
 }
 .policy-table thead th {
-  background: #2563eb;
+  background: var(--main-color);
   color: #fff;
   font-weight: bold;
   font-size: 1.05rem;
@@ -145,9 +146,9 @@ body {
   background: var(--table-stripe);
 }
 .policy-table th:first-child, .policy-table td:first-child {
-  background: #f1f5fb;
+  background: #e6faf2;
   font-weight: bold;
-  color: #2563eb;
+  color: var(--main-color);
 }
 .policy-table .ldp { color: var(--ldp); font-weight: 500; }
 .policy-table .ish { color: var(--ish); font-weight: 500; }
@@ -167,7 +168,7 @@ body {
 }
 .qa-section h2, .real-section h2, .source-section h2 {
   font-size: 1.12rem;
-  color: #2563eb;
+  color: var(--main-color);
   margin-bottom: 10px;
 }
 .qa-section dl dt {
@@ -193,14 +194,14 @@ nav {
   text-align: center;
 }
 nav a {
-  color: #2563eb;
+  color: var(--main-color);
   margin: 0 8px;
   text-decoration: none;
   font-weight: 500;
   transition: color .2s, text-decoration .2s;
 }
 nav a:hover {
-  color: #10b981;
+  color: #2563eb;
   text-decoration: underline;
 }
 
@@ -209,7 +210,7 @@ nav a:hover {
 ********************/
 .lead {
   font-size: 1.13rem;
-  color: #2563eb;
+  color: var(--main-color);
   margin-bottom: 16px;
   margin-top: 6px;
 }
