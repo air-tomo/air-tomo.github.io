@@ -1,0 +1,45 @@
+name: Daily Update
+
+# 毎日 日本時間 朝9:00 (UTC 0:00) に実行
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  # 手動で「Run workflow」ボタンを押した時も実行できるようにする
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのコードを取得
+        uses: actions/checkout@v3
+
+      - name: Pythonのセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: ライブラリのインストール
+        run: |
+          pip install pandas yfinance jinja2 matplotlib lxml
+
+      - name: J-REITリスト取得 (念のため毎回更新)
+        run: python get_tickers.py
+
+      - name: 株価データ取得
+        run: python fetch_data.py
+
+      - name: HTML生成
+        run: python build.py
+
+      - name: 変更をコミットしてGitHubに保存
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ output/
+          # 変更がある時だけコミットする（エラー回避）
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update data $(date +'%Y-%m-%d')" && git push)
