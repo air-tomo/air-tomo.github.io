@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="スイング切り抜き">
+<meta name="theme-color" content="#1f7a3d">
+<title>ゴルフスイング自動切り抜き</title>
+<style>
+  :root {
+    --bg: #f4f6f3; --card: #fff; --text: #1d2420; --muted: #66706a;
+    --accent: #1f7a3d; --accent-text: #fff; --border: #d9dfda; --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --card: #1c221f; --text: #e8ece9; --muted: #9aa59e;
+            --accent: #43b26a; --accent-text: #08130c; --border: #2e3732; --error: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    -webkit-text-size-adjust: 100%;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 20px 0 4px; }
+  .lead { color: var(--muted); font-size: .9rem; margin: 0 0 16px; line-height: 1.5; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .file-btn {
+    display: flex; align-items: center; justify-content: center; min-height: 96px;
+    border: 2px dashed var(--border); border-radius: 12px; text-align: center;
+    color: var(--muted); cursor: pointer; padding: 12px; word-break: break-all;
+  }
+  .file-btn.selected { border-style: solid; border-color: var(--accent); color: var(--text); }
+  input[type=file] { display: none; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row label { font-size: .95rem; }
+  .row small { display: block; color: var(--muted); font-size: .75rem; margin-top: 2px; }
+  .row input[type=number] {
+    width: 84px; font-size: 16px; /* iOS のズーム防止のため 16px 以上 */
+    padding: 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); text-align: right;
+  }
+  .row input[type=range] { width: 140px; accent-color: var(--accent); }
+  button, .btn {
+    display: block; width: 100%; font-size: 1.05rem; font-weight: 600; padding: 14px;
+    border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-text);
+    text-align: center; text-decoration: none; cursor: pointer; -webkit-appearance: none;
+  }
+  button:disabled { opacity: .45; }
+  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-top: 10px; }
+  progress { width: 100%; height: 14px; -webkit-appearance: none; appearance: none; border: 0; border-radius: 7px; overflow: hidden; background: var(--border); }
+  progress::-webkit-progress-bar { background: var(--border); }
+  progress::-webkit-progress-value { background: var(--accent); }
+  progress::-moz-progress-bar { background: var(--accent); }
+  .status { display: flex; justify-content: space-between; font-size: .9rem; margin: 8px 0 0; }
+  .hint { color: var(--muted); font-size: .8rem; margin: 8px 0 0; line-height: 1.5; }
+  .error { color: var(--error); font-weight: 600; line-height: 1.5; }
+  video { width: 100%; border-radius: 10px; background: #000; margin-bottom: 12px; }
+  .swings { color: var(--muted); font-size: .85rem; line-height: 1.6; margin: 0 0 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>⛳ ゴルフスイング自動切り抜き</h1>
+  <p class="lead">練習動画をアップロードすると、打球音からスイングを見つけて1本の MP4 にまとめます。</p>
+
+  <form id="form">
+    <div class="card">
+      <label class="file-btn" id="fileLabel" for="video">タップして動画を選択<br>（写真ライブラリ・ファイル）</label>
+      <input type="file" id="video" name="video" accept="video/*,.mov,.mp4,.m4v">
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label for="pre_sec">打球の前<small>スイング開始を含める秒数</small></label>
+        <span><input type="number" id="pre_sec" name="pre_sec" value="3" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
+      </div>
+      <div class="row">
+        <label for="post_sec">打球の後<small>フォロースルーを含める秒数</small></label>
+        <span><input type="number" id="post_sec" name="post_sec" value="2" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
+      </div>
+      <div class="row">
+        <label for="sensitivity">検出感度 <b id="sensVal">5</b><small>見逃す→上げる／誤検出→下げる</small></label>
+        <input type="range" id="sensitivity" name="sensitivity" min="1" max="10" value="5">
+      </div>
+      <div class="row">
+        <label for="min_interval_sec">最短の打球間隔<small>これより近い音は同じスイング扱い</small></label>
+        <span><input type="number" id="min_interval_sec" name="min_interval_sec" value="5" min="1" max="60" step="1" inputmode="decimal"> 秒</span>
+      </div>
+    </div>
+
+    <button type="submit" id="submit" disabled>切り抜きを開始</button>
+  </form>
+
+  <div class="card" id="progressCard" hidden>
+    <progress id="bar" max="100" value="0"></progress>
+    <p class="status"><span id="step">準備中</span><span id="pct">0%</span></p>
+    <p class="hint" id="progressHint">アップロード中はこの画面を開いたままにしてください。</p>
+    <p class="error" id="error" hidden></p>
+    <button type="button" class="btn secondary" id="retry" hidden>やり直す</button>
+  </div>
+
+  <div class="card" id="resultCard" hidden>
+    <video id="preview" controls playsinline preload="metadata"></video>
+    <p class="swings" id="summary"></p>
+    <a class="btn" id="download" href="#">MP4 をダウンロード</a>
+    <p class="hint">iPhone ではダウンロード後、Safari の「ダウンロード」→ 共有ボタン →「ビデオを保存」で写真アプリに保存できます。</p>
+    <button type="button" class="btn secondary" id="again">別の動画を処理する</button>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("form"), fileInput = $("video");
+  var STORAGE_KEY = "golfSwingJob";
+
+  function store(value) {
+    try { value ? localStorage.setItem(STORAGE_KEY, value) : localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  }
+  function stored() {
+    try { return localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
+  }
+
+  function formatTime(sec) {
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  function formatSize(bytes) {
+    return bytes >= 1024 * 1024 * 1024 ? (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : (bytes / 1024 / 1024).toFixed(1) + " MB";
+  }
+
+  function setProgress(pct, step) {
+    $("bar").value = pct;
+    $("pct").textContent = Math.round(pct) + "%";
+    if (step) $("step").textContent = step;
+  }
+
+  function showError(message) {
+    $("error").textContent = message;
+    $("error").hidden = false;
+    $("retry").hidden = false;
+    $("progressHint").hidden = true;
+    store(null);
+  }
+
+  function resetUI() {
+    store(null);
+    form.hidden = false;
+    $("progressCard").hidden = true;
+    $("resultCard").hidden = true;
+    $("error").hidden = true;
+    $("retry").hidden = true;
+    $("progressHint").hidden = false;
+    $("preview").removeAttribute("src");
+    $("submit").disabled = !fileInput.files.length;
+    window.scrollTo(0, 0);
+  }
+
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files[0];
+    $("fileLabel").textContent = f ? f.name + "（" + formatSize(f.size) + "）" : "タップして動画を選択";
+    $("fileLabel").classList.toggle("selected", !!f);
+    $("submit").disabled = !f;
+  });
+  $("sensitivity").addEventListener("input", function () { $("sensVal").textContent = this.value; });
+  $("retry").addEventListener("click", resetUI);
+  $("again").addEventListener("click", function () {
+    fileInput.value = "";
+    fileInput.dispatchEvent(new Event("change"));
+    resetUI();
+  });
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!fileInput.files.length) return;
+    form.hidden = true;
+    $("progressCard").hidden = false;
+    $("error").hidden = true;
+    setProgress(0, "アップロード中");
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    // アップロードは全体の 0〜30% として表示
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) {
+        var r = ev.loaded / ev.total;
+        setProgress(r * 30, "アップロード中 " + formatSize(ev.loaded) + " / " + formatSize(ev.total));
+      }
+    };
+    xhr.onload = function () {
+      var data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (err) {}
+      if (xhr.status !== 200 || !data.job_id) {
+        showError(data.error || "アップロードに失敗しました（" + xhr.status + "）。");
+        return;
+      }
+      store(data.job_id);
+      $("progressHint").textContent = "サーバーで処理中です。画面を閉じても、再度開けば続きから表示されます。";
+      poll(data.job_id);
+    };
+    xhr.onerror = function () { showError("サーバーに接続できませんでした。Mac でサーバーが起動しているか、同じ Wi-Fi に接続しているか確認してください。"); };
+    xhr.send(new FormData(form));
+  });
+
+  function poll(jobId) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/jobs/" + jobId);
+    xhr.onload = function () {
+      var job = {};
+      try { job = JSON.parse(xhr.responseText); } catch (err) {}
+      if (xhr.status !== 200) { showError(job.error || "処理状況を取得できませんでした。"); return; }
+      // サーバー処理は全体の 30〜100% として表示
+      setProgress(30 + job.progress * 0.7, job.step);
+      if (job.status === "done") return showResult(jobId, job);
+      if (job.status === "error") return showError(job.error);
+      setTimeout(function () { poll(jobId); }, 1000);
+    };
+    xhr.onerror = function () { setTimeout(function () { poll(jobId); }, 3000); };
+    xhr.send();
+  }
+
+  function showResult(jobId, job) {
+    store(null);
+    form.hidden = true;
+    $("progressCard").hidden = true;
+    $("resultCard").hidden = false;
+    $("preview").src = "/video/" + jobId + ".mp4";
+    $("download").href = "/download/" + jobId;
+    var times = job.impacts.map(formatTime).join("、");
+    $("summary").textContent = job.impacts.length + " スイング（合計 " + job.output_duration + " 秒・" +
+      formatSize(job.output_size) + "）／ 打球位置: " + times;
+  }
+
+  // 画面を開き直したときに処理中のジョブがあれば続きを表示する
+  var pending = stored();
+  if (pending) {
+    form.hidden = true;
+    $("progressCard").hidden = false;
+    $("progressHint").textContent = "サーバーで処理中です。";
+    setProgress(30, "処理状況を確認しています");
+    poll(pending);
+  }
+})();
+</script>
+</body>
+</html>
