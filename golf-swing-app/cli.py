@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--max-gap", type=float, help="[テニス] 同じラリーとみなす打球間隔（秒）")
     parser.add_argument("--min-hits", type=int, help="[テニス] ラリーとみなす最少打球数")
     parser.add_argument("--no-serve-only", action="store_true", help="[テニス] サーブだけのポイントを残さない")
+    parser.add_argument("--second-serve-gap", type=float, help="[テニス] フォルトからセカンドサーブまでの最大間隔（秒）")
     parser.add_argument("--min-interval", type=float, help="[ゴルフ] スイングの最短間隔（秒）")
     args = parser.parse_args()
 
@@ -50,6 +51,8 @@ def main():
             settings.min_hits = args.min_hits
         if args.no_serve_only:
             settings.keep_serve_only = False
+        if args.second_serve_gap is not None:
+            settings.second_serve_gap_sec = args.second_serve_gap
     else:
         settings = swing.DetectSettings()
         if args.min_interval is not None:
@@ -68,7 +71,7 @@ def main():
             result = tennis.analyze(env, info["duration"], settings)
             segments, labels = result["segments"], result["labels"]
             for i, r in enumerate(result["rallies"]):
-                note = "（サーブのみ）" if r["hits"] == 1 else ""
+                note = "（フォルト→セカンドサーブ）" if len(r["parts"]) > 1 else "（サーブのみ）" if r["hits"] == 1 else ""
                 print(f"  ポイント {i + 1:3d}: 元 {swing.format_time(r['start'])}  {r['hits']} 打{note}")
             print(f"{len(result['rallies'])} ポイントを検出しました")
         else:

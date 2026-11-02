@@ -104,9 +104,11 @@
     </div>
     <div class="card">
       <label class="file-btn" id="fileLabel" for="file">タップして動画を選択</label>
-      <input type="file" id="file" accept="video/*,.mov,.mp4,.m4v">
-      <p class="hint">動画は iPhone の外に送信されず、この画面の中だけで処理します。<br>
-        写真から選ぶと変換に時間がかかることがあります。長い動画は「写真」アプリの共有 →「"ファイル"に保存」してから、ここで「ファイル」から選ぶと速く、画質もそのままです。</p>
+      <!-- QuickTime を明示すると、iPhone が選んだ動画を変換せずに渡しやすい -->
+      <input type="file" id="file" accept="video/quicktime,video/mp4,video/x-m4v,video/*,.mov,.mp4,.m4v">
+      <p class="hint">動画は iPhone の外に送信（アップロード）されず、この画面の中だけで処理します。<br>
+        動画を選んだあと「準備中」の表示が長く続くのは、iPhone 側の処理です（iCloud から元の動画をダウンロード、または互換形式への変換）。
+        長い試合動画は、先に「写真」アプリの共有 →「"ファイル"に保存」してから、ここで「ファイル」から選ぶと待ち時間が短く、画質もそのままです。</p>
     </div>
     <button type="button" class="primary" id="loadBtn" disabled>読み込んで検出する</button>
   </section>
