@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="自動カット">
+<meta name="theme-color" content="#1f7a3d">
+<title>スイング・ラリー自動カット</title>
+<style>
+  :root {
+    --bg: #f4f6f3; --card: #fff; --text: #1d2420; --muted: #66706a;
+    --accent: #1f7a3d; --accent-text: #fff; --border: #d9dfda; --error: #b3261e; --off: #a7b0aa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --card: #1c221f; --text: #e8ece9; --muted: #9aa59e;
+            --accent: #43b26a; --accent-text: #08130c; --border: #2e3732; --error: #ff8a80; --off: #59625c; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    -webkit-text-size-adjust: 100%;
+    padding: env(safe-area-inset-top) 16px calc(96px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 600px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 18px 0 4px; }
+  .lead { color: var(--muted); font-size: .88rem; margin: 0 0 14px; line-height: 1.55; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
+  .modes { display: flex; background: var(--border); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+  .modes button { flex: 1; background: transparent; color: var(--text); font-size: 1rem; font-weight: 600; padding: 10px; border: 0; border-radius: 9px; }
+  .modes button.active { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .file-btn {
+    display: flex; align-items: center; justify-content: center; min-height: 96px; cursor: pointer;
+    border: 2px dashed var(--border); border-radius: 12px; text-align: center; color: var(--muted); padding: 12px; word-break: break-all;
+  }
+  .file-btn.selected { border-style: solid; border-color: var(--accent); color: var(--text); }
+  input[type=file] { display: none; }
+  .hint { color: var(--muted); font-size: .8rem; margin: 8px 0 0; line-height: 1.55; }
+  button.primary, a.primary, button.secondary, a.secondary {
+    display: block; width: 100%; font-size: 1.05rem; font-weight: 600; padding: 14px; border-radius: 12px;
+    text-align: center; text-decoration: none; cursor: pointer; -webkit-appearance: none; font-family: inherit;
+  }
+  .primary { border: 0; background: var(--accent); color: var(--accent-text); }
+  .primary:disabled { opacity: .45; }
+  .secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-top: 10px; }
+  progress { width: 100%; height: 14px; -webkit-appearance: none; appearance: none; border: 0; border-radius: 7px; overflow: hidden; background: var(--border); }
+  progress::-webkit-progress-bar { background: var(--border); }
+  progress::-webkit-progress-value { background: var(--accent); }
+  .status { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; margin: 8px 0 0; }
+  .error { color: var(--error); font-weight: 600; line-height: 1.55; }
+  [hidden] { display: none !important; }
+
+  /* 確認・調整 */
+  .player { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .player video { width: 100%; max-height: 38vh; border-radius: 10px; background: #000; display: block; }
+  .player .now { font-size: .8rem; color: var(--muted); margin-top: 4px; min-height: 1.2em; }
+  .summary { font-size: .92rem; line-height: 1.6; }
+  .summary b { color: var(--accent); }
+  details.settings summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row label { font-size: .92rem; }
+  .row small { display: block; color: var(--muted); font-size: .74rem; margin-top: 2px; }
+  .row input[type=number] {
+    width: 76px; font-size: 16px; padding: 7px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); text-align: right;
+  }
+  .row > span { white-space: nowrap; flex: none; }
+  .row input[type=range] { width: 130px; accent-color: var(--accent); }
+  .row input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
+  .toolbar { display: flex; gap: 8px; margin: 4px 0 10px; }
+  .toolbar button { flex: 1; font-size: .85rem; padding: 9px 4px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-family: inherit; }
+  ol.clips { list-style: none; margin: 0; padding: 0; }
+  .clip { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .clip.off { opacity: .55; }
+  .clip.playing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .clip .top { display: flex; align-items: center; gap: 10px; }
+  .clip input[type=checkbox] { width: 26px; height: 26px; accent-color: var(--accent); flex: none; }
+  .clip .info { flex: 1; min-width: 0; font-size: .9rem; line-height: 1.4; }
+  .clip .info span { display: block; color: var(--muted); font-size: .78rem; }
+  .clip .play { flex: none; width: 44px; height: 44px; border-radius: 22px; border: 0; background: var(--accent); color: var(--accent-text); font-size: 1rem; }
+  .clip .trim { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: .78rem; color: var(--muted); flex-wrap: wrap; }
+  .clip .trim button { min-width: 44px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: .85rem; font-family: inherit; }
+  .clip .trim .gap { flex: 1; }
+  .bottom {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--bg); border-top: 1px solid var(--border);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  }
+  .bottom .inner { max-width: 600px; margin: 0 auto; }
+  .result video { width: 100%; border-radius: 10px; background: #000; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">⛳ ゴルフスイング自動切り抜き</h1>
+  <p class="lead" id="lead"></p>
+
+  <!-- 1. 動画を選ぶ -->
+  <section id="stepSelect">
+    <div class="modes" id="modes">
+      <button type="button" data-mode="golf">⛳ ゴルフ練習</button>
+      <button type="button" data-mode="tennis">🎾 テニス試合</button>
+    </div>
+    <div class="card">
+      <label class="file-btn" id="fileLabel" for="file">タップして動画を選択</label>
+      <input type="file" id="file" accept="video/*,.mov,.mp4,.m4v">
+      <p class="hint">動画は iPhone の外に送信されず、この画面の中だけで処理します。<br>
+        写真から選ぶと変換に時間がかかることがあります。長い動画は「写真」アプリの共有 →「"ファイル"に保存」してから、ここで「ファイル」から選ぶと速く、画質もそのままです。</p>
+    </div>
+    <button type="button" class="primary" id="loadBtn" disabled>読み込んで検出する</button>
+  </section>
+
+  <!-- 処理中 -->
+  <section class="card" id="stepProgress" hidden>
+    <progress id="bar" max="100" value="0"></progress>
+    <p class="status"><span id="step">準備中</span><span id="pct">0%</span></p>
+    <p class="hint" id="progressHint">処理が終わるまで、この画面を開いたままにしてください。</p>
+    <p class="error" id="error" hidden></p>
+    <button type="button" class="secondary" id="retryBtn" hidden>最初に戻る</button>
+  </section>
+
+  <!-- 2. 確認・調整 -->
+  <section id="stepReview" hidden>
+    <div class="player">
+      <video id="srcVideo" playsinline controls preload="metadata"></video>
+      <div class="now" id="nowPlaying"></div>
+    </div>
+    <div class="card summary" id="summary"></div>
+    <div class="modes" id="modes2">
+      <button type="button" data-mode="golf">⛳ ゴルフ</button>
+      <button type="button" data-mode="tennis">🎾 テニス</button>
+    </div>
+    <details class="card settings" id="settingsBox">
+      <summary>検出の設定</summary>
+      <div id="settings"></div>
+      <p class="hint">設定を変えると、すぐに検出し直します（手動の調整はリセットされます）。</p>
+    </details>
+    <div class="toolbar">
+      <button type="button" id="playAllBtn">▶ つなげて再生</button>
+      <button type="button" id="allOnBtn">すべて選択</button>
+      <button type="button" id="allOffBtn">すべて解除</button>
+    </div>
+    <ol class="clips" id="clips"></ol>
+    <div class="bottom">
+      <div class="inner">
+        <button type="button" class="primary" id="exportBtn">書き出す</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 完成 -->
+  <section id="stepDone" hidden>
+    <div class="card result">
+      <video id="outVideo" playsinline controls preload="metadata"></video>
+      <p class="summary" id="doneSummary"></p>
+      <button type="button" class="primary" id="shareBtn">写真に保存・共有</button>
+      <a class="secondary" id="downloadLink" href="#" download>ファイルとしてダウンロード</a>
+      <p class="hint">「写真に保存・共有」→「ビデオを保存」で写真アプリに保存できます。</p>
+      <button type="button" class="secondary" id="backBtn">調整に戻る</button>
+      <button type="button" class="secondary" id="newBtn">別の動画を処理する</button>
+    </div>
+  </section>
+</main>
+
+<script src="mp4.js"></script>
+<script src="detect.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
