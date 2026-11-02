@@ -138,58 +138,113 @@
   }
 
   // ---- テニス ----
+  // ポイントはサーブから始まる（golf-swing-app/tennis.py と同じ組み立て方）
+  // 1. 間隔の短い打球を1つのラリーにまとめる（ラリー中は 1〜3 秒、ポイント間は 20〜25 秒）
+  // 2. サーブ前のボールつき（1 秒未満のリズムで続く、サーブより小さい音）を除き、最初の打球をサーブとする
+  // 3. フォルト（サーブ1打だけ）のすぐ後にセカンドサーブが続けば同じポイント
+  // 4. 各サーブのトス（約 1.5 秒前）から最後の打球の少し後までを残す
 
-  // ポイント間は通常 20〜25 秒あり、ラリー中の打球間隔（1〜3 秒）よりずっと長い
   const TENNIS = {
-    preSec: 2.5, postSec: 2, sensitivity: 6, maxShotGapSec: 4, minHits: 2, keepServeOnly: true, mergeGapSec: 3,
+    preSec: 1.5, postSec: 2, sensitivity: 6, maxShotGapSec: 4, minHits: 2, keepServeOnly: true,
+    secondServeGapSec: 12, mergeGapSec: 3,
   };
-  const HIT_MIN_GAP_SEC = 0.3;
-  const QUIET_HIT_DB = 12;
+  const HIT_MIN_GAP_SEC = 0.3; // これより近い打球音は同じ1打（反響など）
+  const QUIET_HIT_DB = 12; // ラリーの典型的な打球より、これ以上小さい音は前後から除く
+  const BOUNCE_GAP_SEC = 1.0; // サーブ前のボールつきの間隔
+  const BOUNCE_QUIETER_DB = 3; // ボールつきはサーブよりこれ以上小さい
+  const MAX_FAULT_HITS = 2; // フォルトの打球数（サーブ＋相手が打ち返した1打まで）
 
-  function groupRallies(times, strengths, st) {
-    const groups = [];
+  function trimQuiet(g) {
+    const ref = percentile(g.map(function (h) { return h.s; }), 75);
+    while (g.length > 1 && g[0].s < ref - QUIET_HIT_DB) g = g.slice(1);
+    while (g.length > 1 && g[g.length - 1].s < ref - QUIET_HIT_DB) g = g.slice(0, -1);
+    return g;
+  }
+
+  /* サーブ前のボールつきを除き、そこで区切る（フォルト後にボールをついてセカンドサーブを打つ場合も分かれる） */
+  function splitAtServes(g) {
+    const out = [];
+    let start = 0, i = 0;
+    while (i < g.length) {
+      let j = i;
+      while (j + 1 < g.length && g[j + 1].t - g[j].t < BOUNCE_GAP_SEC) j++;
+      let loudest = -Infinity;
+      for (let k = i; k <= j; k++) loudest = Math.max(loudest, g[k].s);
+      if (j > i && j + 1 < g.length && loudest < g[j + 1].s - BOUNCE_QUIETER_DB) {
+        if (i > start) out.push(g.slice(start, i));
+        start = i = j + 1;
+      } else {
+        i = j + 1;
+      }
+    }
+    out.push(g.slice(start));
+    return out.filter(function (x) { return x.length; });
+  }
+
+  function findPoints(times, strengths, st) {
+    let groups = [];
     times.forEach(function (t, i) {
       const g = groups[groups.length - 1];
       if (g && t - g[g.length - 1].t <= st.maxShotGapSec) g.push({ t: t, s: strengths[i] });
       else groups.push([{ t: t, s: strengths[i] }]);
     });
-    // サーブ前のボールつきなど、ラリーの前後にある小さな音を取り除く
-    const trimmed = groups.map(function (g) {
-      const ref = percentile(g.map(function (h) { return h.s; }), 75);
-      while (g.length > 1 && g[0].s < ref - QUIET_HIT_DB) g = g.slice(1);
-      while (g.length > 1 && g[g.length - 1].s < ref - QUIET_HIT_DB) g = g.slice(0, -1);
-      return g;
-    });
-    const multi = trimmed.filter(function (g) { return g.length >= Math.max(2, st.minHits); });
-    // サーブだけのポイントは、他のラリーの1打目（サーブ）並みに大きい音だけ残す（奥側のサーブも拾えるよう小さめを基準に）
+    groups = [].concat.apply([], groups.map(splitAtServes)).map(trimQuiet);
+
+    const multi = groups.filter(function (g) { return g.length >= Math.max(2, st.minHits); });
+    // サーブだけの打球は、他のラリーの1打目（サーブ）並みに大きい音かで物音と区別する（奥側のサーブも拾えるよう小さめを基準に）
     const serveLevel = multi.length ? percentile(multi.map(function (g) { return g[0].s; }), 20) - 3 : null;
-    const rallies = [];
-    trimmed.forEach(function (g) {
-      let keep = g.length >= st.minHits;
-      if (!keep && g.length === 1 && st.keepServeOnly && serveLevel !== null) keep = g[0].s >= serveLevel;
-      if (keep) rallies.push({ start: g[0].t, end: g[g.length - 1].t, hits: g.length });
-    });
-    return rallies;
+    const isServe = function (g) { return serveLevel !== null && g[0].s >= serveLevel; };
+    const part = function (g, fault) { return { start: g[0].t, end: g[g.length - 1].t, hits: g.length, fault: fault }; };
+
+    const points = [];
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i], next = groups[i + 1];
+      if (next && g.length <= MAX_FAULT_HITS && isServe(g) && next[0].t - g[g.length - 1].t <= st.secondServeGapSec) {
+        const first = part(g, true), second = part(next, false);
+        points.push({ start: first.start, end: second.end, hits: first.hits + second.hits, parts: [first, second] });
+        i++;
+        continue;
+      }
+      if (g.length >= st.minHits || (g.length === 1 && st.keepServeOnly && isServe(g))) {
+        const p = part(g, false);
+        points.push({ start: p.start, end: p.end, hits: p.hits, parts: [p] });
+      }
+    }
+    return points;
   }
 
   function tennisClips(prep, st) {
     const hits = detectHits(prep, st.sensitivity, HIT_MIN_GAP_SEC);
-    const rallies = groupRallies(hits.times, hits.strengths, st);
+    const points = findPoints(hits.times, hits.strengths, st);
     const clips = [];
-    rallies.forEach(function (r, i) {
-      const start = Math.max(0, r.start - st.preSec), end = Math.min(prep.duration, r.end + st.postSec);
-      const last = clips[clips.length - 1];
-      if (last && start - last.end < st.mergeGapSec) {
-        last.end = Math.max(last.end, end); last.last = i; last.hits += r.hits;
-      } else {
-        clips.push({ start: start, end: end, first: i, last: i, hits: r.hits, at: r.start });
-      }
+    points.forEach(function (p, pi) {
+      p.parts.forEach(function (part, ki) {
+        const start = Math.max(0, part.start - st.preSec), end = Math.min(prep.duration, part.end + st.postSec);
+        const last = clips[clips.length - 1];
+        if (last && start - last.end < st.mergeGapSec) {
+          last.end = Math.max(last.end, end);
+          last.members.push([pi, ki]);
+        } else {
+          clips.push({ start: start, end: end, at: part.start, members: [[pi, ki]] });
+        }
+      });
     });
     clips.forEach(function (c) {
-      c.label = c.first === c.last ? 'ポイント ' + (c.first + 1) : 'ポイント ' + (c.first + 1) + '〜' + (c.last + 1);
-      c.detail = c.hits + ' 打' + (c.hits === 1 ? '（サーブのみ）' : '');
+      const first = c.members[0], last = c.members[c.members.length - 1];
+      const p = points[first[0]];
+      if (first[0] !== last[0]) {
+        c.label = 'ポイント ' + (first[0] + 1) + '〜' + (last[0] + 1);
+        c.detail = 'ポイントの間が短いためつなげています';
+      } else if (c.members.length === 1 && p.parts.length > 1) {
+        const part = p.parts[first[1]];
+        c.label = 'ポイント ' + (first[0] + 1) + (part.fault ? '・1st サーブ（フォルト）' : '・セカンドサーブ');
+        c.detail = part.hits + ' 打';
+      } else {
+        c.label = 'ポイント ' + (first[0] + 1);
+        c.detail = p.hits + ' 打' + (p.parts.length > 1 ? '（フォルト→セカンドサーブ）' : p.hits === 1 ? '（サーブのみ）' : '');
+      }
     });
-    return { clips: clips, count: rallies.length, unit: 'ポイント' };
+    return { clips: clips, count: points.length, unit: 'ポイント', points: points };
   }
 
   const Detect = {

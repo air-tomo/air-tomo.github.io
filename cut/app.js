@@ -16,12 +16,13 @@
       { key: 'minIntervalSec', label: '最短の打球間隔', note: 'これより近い音は同じスイング扱い', type: 'number', min: 1, max: 60, step: 1, unit: '秒' },
     ],
     tennis: [
-      { key: 'preSec', label: 'ポイントの前', note: 'サーブのトス・動作を含める秒数', type: 'number', min: 0, max: 15, step: 0.5, unit: '秒' },
+      { key: 'preSec', label: 'サーブの前', note: 'トスからサーブを打つまでの秒数', type: 'number', min: 0, max: 15, step: 0.5, unit: '秒' },
       { key: 'postSec', label: 'ポイントの後', note: '最後の打球のあとに残す秒数', type: 'number', min: 0, max: 15, step: 0.5, unit: '秒' },
       { key: 'sensitivity', label: '検出感度', note: 'ラリーが途切れる→上げる／余計な場面が入る→下げる', type: 'range', min: 1, max: 10, step: 1 },
       { key: 'maxShotGapSec', label: 'ラリーの打球間隔', note: 'これより長く打球がなければポイント終了', type: 'number', min: 1, max: 15, step: 0.5, unit: '秒' },
       { key: 'minHits', label: '最少打球数', note: 'これ未満の打球数は物音とみなして除外', type: 'number', min: 1, max: 10, step: 1, unit: '回' },
-      { key: 'keepServeOnly', label: 'サーブだけのポイントも残す', note: 'エース・フォルトなど（大きな打球音のみ）', type: 'checkbox' },
+      { key: 'keepServeOnly', label: 'サーブだけのポイントも残す', note: 'エースなど（大きな打球音のみ）', type: 'checkbox' },
+      { key: 'secondServeGapSec', label: 'セカンドサーブまで', note: 'フォルト後この秒数以内のサーブは同じポイント', type: 'number', min: 0, max: 60, step: 1, unit: '秒' },
     ],
   };
   const NUDGE = 0.5;
@@ -35,7 +36,8 @@
   // ---- 端末に覚えておく設定（使えなくても動くように） ----
   function load(key) { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
   function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* 保存できなくても続ける */ } }
-  ['golf', 'tennis'].forEach(function (m) { Object.assign(state.settings[m], load('cut.settings.' + m) || {}); });
+  const SETTINGS_KEY = 'cut.settings.v2.'; // 初期値を変えたときは番号を上げて、古い保存値を使わない
+  ['golf', 'tennis'].forEach(function (m) { Object.assign(state.settings[m], load(SETTINGS_KEY + m) || {}); });
 
   function show(id) {
     ['stepSelect', 'stepProgress', 'stepReview', 'stepDone'].forEach(function (s) { $(s).hidden = s !== id; });
@@ -226,7 +228,7 @@
           if (def.type === 'range') val.textContent = v;
         }
         st[def.key] = v;
-        save('cut.settings.' + state.mode, st);
+        save(SETTINGS_KEY + state.mode, st);
         scheduleRedetect();
       });
       row.appendChild(label);

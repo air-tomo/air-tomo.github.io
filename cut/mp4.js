@@ -351,7 +351,7 @@
 
   // HEVC の NAL ユニット種別（IDR・CRA などのキーフレームの種類を見分けるため）
   const HEVC_CODECS = ['hvc1', 'hev1', 'dvh1', 'dvhe'];
-  const HEVC_CRA = 21, HEVC_BLA_W_LP = 16, HEVC_RASL_N = 8, HEVC_RASL_R = 9;
+  const HEVC_CRA = 21, HEVC_BLA_W_LP = 16;
 
   function nalLengthSize(track) {
     const b = track.stsdBox;
@@ -388,7 +388,7 @@
   }
 
   function newOut(src) {
-    return { src: src, sizes: [], durs: [], cts: [], sync: [], chunkOffsets: [], chunkCounts: [], time: 0 };
+    return { src: src, sizes: [], durs: [], cts: [], sync: [], chunkOffsets: [], chunkCounts: [], time: 0, edits: [] };
   }
 
   /*
@@ -399,43 +399,41 @@
   async function mux(reader, info, segments, writer, onProgress) {
     const v = info.video, a = info.audio;
     reader = windowReader(reader, 4 * 1024 * 1024);
-    // B フレームのある動画でも壊れないよう、区間はキーフレームからキーフレームの手前まで（GOP 単位）にする
+    // 映像データはキーフレームから次のキーフレームの手前まで（GOP 単位）コピーする（B フレームがあっても壊れない）。
+    // 実際に見せる範囲は編集リストで指定するので、区間の始まりと終わりはフレーム単位で正確になる
+    const pts = function (i) { return v.times[i] + (v.cts ? v.cts[i] / v.timescale : 0); };
+    const merged = [];
+    segments.slice().sort(function (x, y) { return x[0] - y[0]; }).forEach(function (seg) {
+      const last = merged[merged.length - 1];
+      if (last && seg[0] <= last[1]) last[1] = Math.max(last[1], seg[1]);
+      else merged.push([seg[0], seg[1]]);
+    });
     const ranges = [];
-    const sorted = segments.slice().sort(function (x, y) { return x[0] - y[0]; });
-    for (const seg of sorted) {
+    for (const seg of merged) {
       let i0 = Math.max(0, firstGE(v.times, seg[0] + 1e-6) - 1);
-      if (v.sync) while (i0 > 0 && !v.sync[i0]) i0--;
+      while (i0 > 0 && ((v.sync && !v.sync[i0]) || pts(i0) > seg[0])) i0--;
       let i1 = Math.min(v.count, firstGE(v.times, seg[1]));
       if (v.sync) while (i1 < v.count && !v.sync[i1]) i1++;
       if (i1 <= i0) continue;
       const last = ranges[ranges.length - 1];
-      if (last && i0 <= last[1]) last[1] = Math.max(last[1], i1);
-      else ranges.push([i0, i1]);
+      if (last && i0 <= last.i1) { last.i1 = Math.max(last.i1, i1); last.segs.push(seg); }
+      else ranges.push({ i0: i0, i1: i1, segs: [seg] });
     }
     if (!ranges.length) throw new Error('書き出す区間がありません');
 
-    // HEVC の CRA から始まる区間では、直後の RASL フレーム（前の GOP を参照するので表示できない）を除く
-    // 除いたフレームの時間はキーフレームに足して、後続フレームの表示時刻がずれないようにする
-    const drops = new Set(), splices = new Set(), extraDur = new Map();
+    // HEVC の CRA から始まる区間は、CRA を BLA（つなぎ目用のキーフレーム）に書き換える。
+    // 直後の RASL フレーム（前の GOP を参照するので正しく表示できない）は、BLA の規格によりデコーダが表示せず、
+    // 表示時刻も区間の開始より前なので編集リストでも見えない
+    const splices = new Set();
     const lengthSize = nalLengthSize(v);
     if (HEVC_CODECS.indexOf(v.codec) >= 0) {
-      const ls = lengthSize;
       for (const r of ranges) {
-        if (await hevcPictureType(reader, v, r[0], ls) !== HEVC_CRA) continue;
-        splices.add(r[0]);
-        for (let j = r[0] + 1; j < Math.min(r[1], r[0] + 32); j++) {
-          const type = await hevcPictureType(reader, v, j, ls);
-          if (type === HEVC_RASL_N || type === HEVC_RASL_R) {
-            drops.add(j);
-            extraDur.set(r[0], (extraDur.get(r[0]) || 0) + v.durs[j]);
-          }
-          else if (type < 6 || type > 9) break; // 先行フレーム（RADL/RASL）が終わった
-        }
+        if (await hevcPictureType(reader, v, r.i0, lengthSize) === HEVC_CRA) splices.add(r.i0);
       }
     }
 
     let totalBytes = 0, doneBytes = 0;
-    for (const r of ranges) for (let i = r[0]; i < r[1]; i++) totalBytes += v.sizes[i];
+    for (const r of ranges) for (let i = r.i0; i < r.i1; i++) totalBytes += v.sizes[i];
     if (a) totalBytes *= 1.03;
 
     const vo = newOut(v), ao = a ? newOut(a) : null;
@@ -464,29 +462,29 @@
         k = m;
       }
       for (const i of idx) {
-        const dur = src.durs[i] + (src === v ? extraDur.get(i) || 0 : 0);
         out.sizes.push(src.sizes[i]);
-        out.durs.push(dur);
+        out.durs.push(src.durs[i]);
         if (src.cts) out.cts.push(src.cts[i]);
         out.sync.push(src.sync ? src.sync[i] : 1);
-        out.time += dur;
+        out.time += src.durs[i];
       }
     }
 
     for (const r of ranges) {
       const vIdx = [];
       let vDur = 0;
-      for (let i = r[0]; i < r[1]; i++) {
+      for (let i = r.i0; i < r.i1; i++) {
         vDur += v.durs[i];
-        if (!drops.has(i)) vIdx.push(i);
+        vIdx.push(i);
       }
+      const vOutStart = vo.time, aOutStart = ao ? ao.time : 0;
 
       // 音声は映像と出力上の長さがずれないよう、映像の区間に合わせてサンプル数を決める
       const aIdx = [];
       if (a) {
         const vStart = vo.time / v.timescale, aStart = ao.time / a.timescale;
         const vEnd = (vo.time + vDur) / v.timescale;
-        let j = firstGE(a.times, v.times[r[0]] + (aStart - vStart) - a.frameSec / 2);
+        let j = firstGE(a.times, v.times[r.i0] + (aStart - vStart) - a.frameSec / 2);
         let aOut = aStart;
         while (j < a.count && aOut < vEnd - a.frameSec / 2) { aIdx.push(j); aOut += a.durs[j] / a.timescale; j++; }
       }
@@ -502,6 +500,19 @@
         await writeBlock(ao || newOut(v), ab);
         if (onProgress) onProgress(Math.min(1, doneBytes / totalBytes));
       }
+
+      // 編集リスト: コピーした GOP のうち、指定した区間だけを見せる（映像と音声で同じ長さ）
+      const lastI = r.i1 - 1;
+      for (const seg of r.segs) {
+        const start = Math.max(seg[0], pts(r.i0));
+        const end = Math.min(seg[1], pts(lastI) + v.durs[lastI] / v.timescale);
+        const dur = Math.round((end - start) * MOVIE_TIMESCALE);
+        if (dur <= 0) continue;
+        vo.edits.push([dur, vOutStart + Math.round((start - v.times[r.i0]) * v.timescale)]);
+        if (ao && aIdx.length) {
+          ao.edits.push([dur, aOutStart + Math.max(0, Math.round((start - a.times[aIdx[0]]) * a.timescale))]);
+        }
+      }
     }
 
     const mdatSize = writer.position - mdatPos;
@@ -509,7 +520,8 @@
     const moov = buildMoov([vo].concat(ao ? [ao] : []));
     await writer.write(moov);
     if (onProgress) onProgress(1);
-    return { duration: vo.time / v.timescale, bytes: writer.position, ranges: ranges.length };
+    const shown = vo.edits.reduce(function (sum, e) { return sum + e[0]; }, 0) / MOVIE_TIMESCALE;
+    return { duration: shown, bytes: writer.position, ranges: ranges.length };
   }
 
   const MOVIE_TIMESCALE = 1000;
@@ -542,7 +554,9 @@
   function buildTrak(out, trackId) {
     const src = out.src;
     const mediaDur = out.time;
-    const movieDur = Math.round(mediaDur / src.timescale * MOVIE_TIMESCALE);
+    const movieDur = out.edits.length
+      ? out.edits.reduce(function (sum, e) { return sum + e[0]; }, 0)
+      : Math.round(mediaDur / src.timescale * MOVIE_TIMESCALE);
     const isAudio = src.handler === 'soun';
 
     const stbl = [src.stsdBox, fullbox('stts', 0, 0, [table(8, runs(out.durs))])];
@@ -583,9 +597,9 @@
         U16(0, 0, isAudio ? 0x0100 : 0, 0), src.matrix, U32(src.widthRaw, src.heightRaw),
       ]),
     ];
-    // B フレームがある映像は、最初の表示時刻が 0 になるよう編集リストで補正する
-    if (src.cts && out.cts[0]) {
-      trak.push(box('edts', [fullbox('elst', 0, 0, [U32(1, movieDur, out.cts[0], 0x10000)])]));
+    if (out.edits.length) {
+      const rows = out.edits.map(function (e) { return [e[0], e[1], 0x10000]; });
+      trak.push(box('edts', [fullbox('elst', 0, 0, [table(12, rows)])]));
     }
     trak.push(box('mdia', [mdhd, src.hdlrBox, box('minf', minf)]));
     return { box: box('trak', trak), movieDur: movieDur };

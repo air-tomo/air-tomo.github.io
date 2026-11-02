@@ -108,8 +108,8 @@
 
     <fieldset class="card" data-mode="tennis" hidden disabled>
       <div class="row">
-        <label for="t_pre_sec">ポイントの前<small>サーブのトス・動作を含める秒数</small></label>
-        <span><input type="number" id="t_pre_sec" name="pre_sec" value="2.5" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
+        <label for="t_pre_sec">サーブの前<small>トスからサーブを打つまでの秒数</small></label>
+        <span><input type="number" id="t_pre_sec" name="pre_sec" value="1.5" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
       </div>
       <div class="row">
         <label for="t_post_sec">ポイントの後<small>最後の打球のあとに残す秒数</small></label>
@@ -128,8 +128,12 @@
         <span><input type="number" id="min_hits" name="min_hits" value="2" min="1" max="10" step="1" inputmode="numeric"> 回</span>
       </div>
       <div class="row">
-        <label for="keep_serve_only">サーブだけのポイントも残す<small>エース・フォルトなど（大きな打球音のみ）</small></label>
+        <label for="keep_serve_only">サーブだけのポイントも残す<small>エースなど（大きな打球音のみ）</small></label>
         <input type="checkbox" id="keep_serve_only" name="keep_serve_only" value="1" checked>
+      </div>
+      <div class="row">
+        <label for="second_serve_gap_sec">セカンドサーブまで<small>フォルト後この秒数以内のサーブは同じポイント</small></label>
+        <span><input type="number" id="second_serve_gap_sec" name="second_serve_gap_sec" value="12" min="0" max="60" step="1" inputmode="decimal"> 秒</span>
       </div>
     </fieldset>
 
@@ -312,7 +316,8 @@
         formatTime(job.output_duration) + "（" + pct + "% に短縮・" + formatSize(job.output_size) + "）";
       job.rallies.forEach(function (r) {
         var li = document.createElement("li");
-        li.textContent = "元 " + formatTime(r.start) + "　" + r.hits + " 打" + (r.hits === 1 ? "（サーブのみ）" : "");
+        li.textContent = "元 " + formatTime(r.start) + "　" + r.hits + " 打" +
+          (r.parts.length > 1 ? "（フォルト→セカンドサーブ）" : r.hits === 1 ? "（サーブのみ）" : "");
         list.appendChild(li);
       });
       $("pointList").hidden = false;

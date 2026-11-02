@@ -19,7 +19,7 @@ import wave
 import numpy as np
 
 SR = 48000
-rng = np.random.default_rng(42)
+rng = np.random.default_rng(int(os.environ.get("SEED", 42)))
 
 
 def burst(length_sec, decay_sec, amp, lowpass=None):
@@ -39,7 +39,7 @@ def racket_hit(amp):
 
 
 def ball_bounce(amp):
-    return burst(0.05, 0.01, amp, lowpass=24)
+    return burst(0.05, 0.008, amp, lowpass=4)
 
 
 def add(audio, t, sound):
@@ -50,33 +50,35 @@ def add(audio, t, sound):
 
 
 def build_match():
-    """(音声に入れるイベント, 正解のポイント区間) を作る。"""
+    """(音声に入れるイベント, 正解のポイント) を作る。
+    ポイントはサーブから始まる。フォルト→セカンドサーブは同じポイント。"""
     events = []  # (time, sound)
-    points = []  # (最初の打球, 最後の打球, 打球数)
+    points = []  # {"serves": [サーブの時刻], "end": 最後の打球, "hits": 打球数}
     t = 8.0
-    plans = (["rally"] * 9 + ["ace", "fault_then_rally", "long_rally", "short_rally"])
+    plans = (["rally"] * 8 + ["ace", "fault_then_rally", "fault_then_rally", "long_rally", "short_rally"])
     rng.shuffle(plans)
     for p, plan in enumerate(plans):
         near_serves = (p // 4) % 2 == 0  # サービスゲームごとにサーバーが交代
         serve_amp = 0.8 if near_serves else 0.3
 
         def serve_prep(at):
-            # サーブ前のボールつき 3 回 → トス → サーブ
+            # サーブ前のボールつき 3 回 → トス → サーブ。手前のボールつきはカメラに近く、かなり大きく聞こえる
             for k in range(3):
-                events.append((at - 3.6 + k * 0.7, ball_bounce(0.1 if near_serves else 0.04)))
+                events.append((at - 3.6 + k * 0.7, ball_bounce(0.3 if near_serves else 0.1)))
             events.append((at, racket_hit(serve_amp)))
 
+        serves = []
         if plan == "fault_then_rally":
             serve_prep(t)
             events.append((t + 0.7, ball_bounce(0.06)))
-            points.append((t, t, 1))
-            t += rng.uniform(9, 13)
+            serves.append(t)
+            t += rng.uniform(7, 11)
 
         serve_prep(t)
-        first = t
+        serves.append(t)
         if plan == "ace":
             events.append((t + 0.6, ball_bounce(0.06)))
-            points.append((first, first, 1))
+            points.append({"serves": serves, "end": t, "hits": len(serves)})
         else:
             shots = {"long_rally": 18, "short_rally": 2}.get(plan, rng.integers(3, 8))
             near = near_serves
@@ -86,7 +88,7 @@ def build_match():
                 t += gap
                 near = not near
                 events.append((t, racket_hit(rng.uniform(0.6, 0.9) if near else rng.uniform(0.2, 0.35))))
-            points.append((first, t, int(shots)))
+            points.append({"serves": serves, "end": t, "hits": int(shots) + len(serves) - 1})
         t += rng.uniform(18, 28)  # ポイント間
     return events, points, t + 5
 
@@ -138,7 +140,7 @@ def main():
     os.remove(wav)
     with open(out + ".json", "w") as f:
         json.dump({"duration": duration, "points": points}, f, indent=1)
-    play = sum(b - a for a, b, _ in points)
+    play = sum(p["end"] - p["serves"][0] for p in points)
     print(f"{out} を作成しました（{duration:.0f} 秒・{len(points)} ポイント・打球区間の合計 {play:.0f} 秒）")
 
 
