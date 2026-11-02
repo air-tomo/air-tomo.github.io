@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="スイング切り抜き">
 <meta name="theme-color" content="#1f7a3d">
-<title>ゴルフスイング自動切り抜き</title>
+<title>スイング・ラリー自動カット</title>
 <style>
   :root {
     --bg: #f4f6f3; --card: #fff; --text: #1d2420; --muted: #66706a;
@@ -61,20 +61,33 @@
   video { width: 100%; border-radius: 10px; background: #000; margin-bottom: 12px; }
   .swings { color: var(--muted); font-size: .85rem; line-height: 1.6; margin: 0 0 12px; }
   [hidden] { display: none !important; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .modes { display: flex; background: var(--border); border-radius: 12px; padding: 3px; margin-bottom: 14px; }
+  .modes button { flex: 1; background: transparent; color: var(--text); font-size: 1rem; padding: 10px; border-radius: 9px; }
+  .modes button.active { background: var(--card); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .row input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
+  details { margin: 0 0 12px; font-size: .85rem; }
+  details summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+  details ol { margin: 6px 0 0; padding-left: 1.6em; color: var(--muted); line-height: 1.7; }
 </style>
 </head>
 <body>
 <main>
-  <h1>⛳ ゴルフスイング自動切り抜き</h1>
-  <p class="lead">練習動画をアップロードすると、打球音からスイングを見つけて1本の MP4 にまとめます。</p>
+  <h1 id="title">⛳ ゴルフスイング自動切り抜き</h1>
+  <p class="lead" id="lead"></p>
 
   <form id="form">
+    <input type="hidden" name="mode" id="mode" value="golf">
+    <div class="modes" role="tablist">
+      <button type="button" data-mode="golf" class="active">⛳ ゴルフ練習</button>
+      <button type="button" data-mode="tennis">🎾 テニス試合</button>
+    </div>
     <div class="card">
       <label class="file-btn" id="fileLabel" for="video">タップして動画を選択<br>（写真ライブラリ・ファイル）</label>
       <input type="file" id="video" name="video" accept="video/*,.mov,.mp4,.m4v">
     </div>
 
-    <div class="card">
+    <fieldset class="card" data-mode="golf">
       <div class="row">
         <label for="pre_sec">打球の前<small>スイング開始を含める秒数</small></label>
         <span><input type="number" id="pre_sec" name="pre_sec" value="3" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
@@ -91,9 +104,36 @@
         <label for="min_interval_sec">最短の打球間隔<small>これより近い音は同じスイング扱い</small></label>
         <span><input type="number" id="min_interval_sec" name="min_interval_sec" value="5" min="1" max="60" step="1" inputmode="decimal"> 秒</span>
       </div>
-    </div>
+    </fieldset>
 
-    <button type="submit" id="submit" disabled>切り抜きを開始</button>
+    <fieldset class="card" data-mode="tennis" hidden disabled>
+      <div class="row">
+        <label for="t_pre_sec">ポイントの前<small>サーブのトス・動作を含める秒数</small></label>
+        <span><input type="number" id="t_pre_sec" name="pre_sec" value="2.5" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
+      </div>
+      <div class="row">
+        <label for="t_post_sec">ポイントの後<small>最後の打球のあとに残す秒数</small></label>
+        <span><input type="number" id="t_post_sec" name="post_sec" value="2" min="0" max="15" step="0.5" inputmode="decimal"> 秒</span>
+      </div>
+      <div class="row">
+        <label for="t_sensitivity">検出感度 <b id="tSensVal">6</b><small>ラリーが途切れる→上げる／余計な場面が入る→下げる</small></label>
+        <input type="range" id="t_sensitivity" name="sensitivity" min="1" max="10" value="6">
+      </div>
+      <div class="row">
+        <label for="max_shot_gap_sec">ラリーの打球間隔<small>これより長く打球がなければポイント終了</small></label>
+        <span><input type="number" id="max_shot_gap_sec" name="max_shot_gap_sec" value="4" min="1" max="15" step="0.5" inputmode="decimal"> 秒</span>
+      </div>
+      <div class="row">
+        <label for="min_hits">最少打球数<small>これ未満の打球数は物音とみなして除外</small></label>
+        <span><input type="number" id="min_hits" name="min_hits" value="2" min="1" max="10" step="1" inputmode="numeric"> 回</span>
+      </div>
+      <div class="row">
+        <label for="keep_serve_only">サーブだけのポイントも残す<small>エース・フォルトなど（大きな打球音のみ）</small></label>
+        <input type="checkbox" id="keep_serve_only" name="keep_serve_only" value="1" checked>
+      </div>
+    </fieldset>
+
+    <button type="submit" id="submit" disabled>カットを開始</button>
   </form>
 
   <div class="card" id="progressCard" hidden>
@@ -107,6 +147,7 @@
   <div class="card" id="resultCard" hidden>
     <video id="preview" controls playsinline preload="metadata"></video>
     <p class="swings" id="summary"></p>
+    <details id="pointList" hidden><summary>検出したポイント一覧</summary><ol id="points"></ol></details>
     <a class="btn" id="download" href="#">MP4 をダウンロード</a>
     <p class="hint">iPhone ではダウンロード後、Safari の「ダウンロード」→ 共有ボタン →「ビデオを保存」で写真アプリに保存できます。</p>
     <button type="button" class="btn secondary" id="again">別の動画を処理する</button>
@@ -117,7 +158,36 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var form = $("form"), fileInput = $("video");
-  var STORAGE_KEY = "golfSwingJob";
+  var STORAGE_KEY = "golfSwingJob", MODE_KEY = "cutMode";
+  var TEXT = {
+    golf: { title: "⛳ ゴルフスイング自動切り抜き",
+            lead: "練習動画をアップロードすると、打球音からスイングを見つけて1本の MP4 にまとめます。" },
+    tennis: { title: "🎾 テニス ポイント間カット",
+              lead: "試合動画をアップロードすると、打球音からラリーを見つけ、ポイント間の待ち時間を取り除いた1本の MP4 にします。" }
+  };
+
+  function setMode(mode) {
+    $("mode").value = mode;
+    $("title").textContent = TEXT[mode].title;
+    $("lead").textContent = TEXT[mode].lead;
+    document.title = mode === "tennis" ? "テニス ポイント間カット" : "ゴルフスイング自動切り抜き";
+    Array.prototype.forEach.call(document.querySelectorAll(".modes button"), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-mode") === mode);
+    });
+    // 表示していない方の設定は disabled にして送信しない
+    Array.prototype.forEach.call(document.querySelectorAll("fieldset[data-mode]"), function (f) {
+      var on = f.getAttribute("data-mode") === mode;
+      f.hidden = !on;
+      f.disabled = !on;
+    });
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".modes button"), function (b) {
+    b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
+  });
+  var savedMode = null;
+  try { savedMode = localStorage.getItem(MODE_KEY); } catch (e) {}
+  setMode(savedMode === "tennis" ? "tennis" : "golf");
 
   function store(value) {
     try { value ? localStorage.setItem(STORAGE_KEY, value) : localStorage.removeItem(STORAGE_KEY); } catch (e) {}
@@ -126,9 +196,10 @@
     try { return localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
   }
 
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
   function formatTime(sec) {
-    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-    return m + ":" + (s < 10 ? "0" : "") + s;
+    var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = Math.floor(sec % 60);
+    return h ? h + ":" + pad2(m) + ":" + pad2(s) : m + ":" + pad2(s);
   }
   function formatSize(bytes) {
     return bytes >= 1024 * 1024 * 1024 ? (bytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : (bytes / 1024 / 1024).toFixed(1) + " MB";
@@ -168,6 +239,7 @@
     $("submit").disabled = !f;
   });
   $("sensitivity").addEventListener("input", function () { $("sensVal").textContent = this.value; });
+  $("t_sensitivity").addEventListener("input", function () { $("tSensVal").textContent = this.value; });
   $("retry").addEventListener("click", resetUI);
   $("again").addEventListener("click", function () {
     fileInput.value = "";
@@ -231,9 +303,24 @@
     $("resultCard").hidden = false;
     $("preview").src = "/video/" + jobId + ".mp4";
     $("download").href = "/download/" + jobId;
-    var times = job.impacts.map(formatTime).join("、");
-    $("summary").textContent = job.impacts.length + " スイング（合計 " + job.output_duration + " 秒・" +
-      formatSize(job.output_size) + "）／ 打球位置: " + times;
+    var list = $("points");
+    list.innerHTML = "";
+    $("pointList").hidden = true;
+    if (job.mode === "tennis") {
+      var pct = Math.round(job.output_duration / job.input_duration * 100);
+      $("summary").textContent = job.rallies.length + " ポイント／ " + formatTime(job.input_duration) + " → " +
+        formatTime(job.output_duration) + "（" + pct + "% に短縮・" + formatSize(job.output_size) + "）";
+      job.rallies.forEach(function (r) {
+        var li = document.createElement("li");
+        li.textContent = "元 " + formatTime(r.start) + "　" + r.hits + " 打" + (r.hits === 1 ? "（サーブのみ）" : "");
+        list.appendChild(li);
+      });
+      $("pointList").hidden = false;
+    } else {
+      var times = job.impacts.map(formatTime).join("、");
+      $("summary").textContent = job.impacts.length + " スイング（合計 " + job.output_duration + " 秒・" +
+        formatSize(job.output_size) + "）／ 打球位置: " + times;
+    }
   }
 
   // 画面を開き直したときに処理中のジョブがあれば続きを表示する
