@@ -116,19 +116,36 @@ def ray_height(u, v, y_plane):
     s_ = (y_plane - C[1]) / d[1]
     return float(C[2] + s_ * d[2]) if s_ > 0 else None
 def rally_until(P, bs, i0, t_from, hits, clip_end):
-    """bounces of the rally after bs[i0-1] up to the end of the point. Returns (list of bounces, end time)"""
+    """bounces of the rally after bs[i0-1] up to the end of the point. Returns (list of bounces, end time).
+    The point is over when the ball goes out, bounces twice on one side (or rolls) with no shot in between, is not seen for 2 s,
+    or nothing happens (no shot, no bounce) for 3.5 s (a lob takes 3 s): the ball flew out of the picture or into the net, and what the
+    detector finds after that is another ball."""
     out, last_t = [], t_from
+    prev = bs[i0 - 1] if i0 > 0 and abs(bs[i0 - 1]["t"] - t_from) < 1e-6 else None
+    act = t_from
+    def quiet(t1):
+        ev = [act] + [h for h in hits if act < h < t1] + [t1]
+        for a, b in zip(ev, ev[1:]):
+            if b - a > 3.5: return a
+        return None
     for bb in bs[i0:]:
         g = ball_gap(P, last_t, bb["t"])
         if g is not None: return out, g + 1.0
+        q = quiet(bb["t"])
+        if q is not None: return out, q + 1.5
         x, y = bb["court"]
         bb["kind"] = "rally"; bb["call"] = call(x, y, (-4.115, 4.115, 0, 23.77))
         out.append(bb); last_t = bb["t"]
         if bb["call"] == "OUT": return out, bb["t"] + 1.5
+        if prev is not None and (prev["court"][1] < 11.885) == (y < 11.885) and not any(prev["t"] + 0.08 < h < bb["t"] - 0.05 for h in hits):
+            return out, bb["t"] + 1.0
+        prev = bb; act = bb["t"]
     g = ball_gap(P, last_t, clip_end)
     if g is not None: return out, g + 1.0
     after = [h for h in hits if 0 < h - last_t < 1.5]
-    return out, min(clip_end, (after[-1] if after else last_t) + 1.5)
+    end = (after[-1] if after else last_t) + 1.5
+    q = quiet(clip_end)
+    return out, min(clip_end, end, q + 1.5 if q is not None else end)
 def returned(t_bounce, hits):
     """was the serve played back? In a rally the shots keep coming (return, next shot...): at least 2 hit sounds within 4.5 s
     of the serve bounce. After a fault there is at most one (the receiver or the server knocking the ball away)."""
@@ -145,7 +162,10 @@ for arg in sys.argv[5:]:
     attempts = []
     for h in loud:
         seg = [q for q in P if 0.05 < q[0] - h < 0.5]
-        if len(seg) < 3 or seg[0][2] > 260 or seg[-1][2] < 400: continue
+        if len(seg) < 3 or seg[-1][2] < 400: continue
+        # height just after the contact: the first points can be missed, so carry the falling path back to h + 0.05
+        y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0])
+        if min(seg[0][2], y0) > 260: continue
         d = np.hypot(np.diff([q[1] for q in seg]), np.diff([q[2] for q in seg])) / np.diff([q[0] for q in seg]) / 30
         if np.median(d) > 15: attempts.append({"t": h, "side": "far"})
     # far player: lands in (or near) a near service box, fast, hit high (>= 1.8 m) at the far baseline

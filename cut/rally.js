@@ -308,19 +308,36 @@
 
   // ---- 試合全体: サーブ・フォルト・ポイント（tn_post.py と同じ） ----
 
+  /*
+   * ポイントの終わり: アウト、同じ側で打球なしに 2 回バウンド（転がっている）、ボールが 2 秒見えない、
+   * または打球もバウンドも 3.5 秒ない（画面の外やネットへ。そのあと見つかるのは別のボール。ロブは 3 秒かかる）
+   */
   function rallyUntil(P, bs, i0, tFrom, hits, clipEnd) {
-    const out = []; let lastT = tFrom;
+    const out = []; let lastT = tFrom, act = tFrom;
+    let prev = i0 > 0 && Math.abs(bs[i0 - 1].t - tFrom) < 1e-6 ? bs[i0 - 1] : null;
+    const quiet = function (t1) {
+      const ev = [act].concat(hits.filter(function (h) { return h > act && h < t1; }), [t1]);
+      for (let i = 1; i < ev.length; i++) if (ev[i] - ev[i - 1] > 3.5) return ev[i - 1];
+      return null;
+    };
     for (const bb of bs.slice(i0)) {
       const g = ballGap(P, lastT, bb.t);
       if (g != null) return [out, g + 1.0];
+      const q = quiet(bb.t);
+      if (q != null) return [out, q + 1.5];
       bb.kind = 'rally'; bb.call = call(bb.court[0], bb.court[1], [-SINGLES, SINGLES, 0, BASE_F]);
       out.push(bb); lastT = bb.t;
       if (bb.call === 'OUT') return [out, bb.t + 1.5];
+      if (prev && (prev.court[1] < NET_Y) === (bb.court[1] < NET_Y) &&
+          !hits.some(function (h) { return h > prev.t + 0.08 && h < bb.t - 0.05; })) return [out, bb.t + 1.0];
+      prev = bb; act = bb.t;
     }
     const g = ballGap(P, lastT, clipEnd);
     if (g != null) return [out, g + 1.0];
     const after = hits.filter(function (h) { return h - lastT > 0 && h - lastT < 1.5; });
-    return [out, Math.min(clipEnd, (after.length ? after[after.length - 1] : lastT) + 1.5)];
+    const end = (after.length ? after[after.length - 1] : lastT) + 1.5;
+    const q = quiet(clipEnd);
+    return [out, Math.min(clipEnd, end, q != null ? q + 1.5 : end)];
   }
   /* ラリーでは打球が続く: サーブのバウンドから 4.5 秒以内に打球音が 2 回以上。フォルトのあとは多くても 1 回 */
   function returned(tBounce, hits) { return hits.filter(function (h) { return h - tBounce > 0.1 && h - tBounce < 4.5; }).length >= 2; }
@@ -341,7 +358,10 @@
       const P = cd.P, bs = cd.bs, hits = cd.hits, loud = cd.loud, list = [];
       loud.forEach(function (h) {     // 手前の選手のサーブ
         const seg = P.filter(function (q) { return q[0] - h > 0.05 && q[0] - h < 0.5; });
-        if (seg.length < 3 || seg[0][2] > 260 || seg[seg.length - 1][2] < 400) return;
+        if (seg.length < 3 || seg[seg.length - 1][2] < 400) return;
+        // 打った直後の高さ: 最初の数フレームは取れないことがあるので、落ちてくる線を h + 0.05 秒まで戻す
+        const y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0]);
+        if (Math.min(seg[0][2], y0) > 260) return;
         const d = []; for (let i = 1; i < seg.length; i++) d.push(Math.hypot(seg[i][1] - seg[i - 1][1], seg[i][2] - seg[i - 1][2]) / (seg[i][0] - seg[i - 1][0]) / 30);
         if (median(d) > 15) list.push({ t: h, side: 'far' });
       });
