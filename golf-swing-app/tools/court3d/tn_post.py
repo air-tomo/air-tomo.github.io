@@ -159,6 +159,12 @@ for arg in sys.argv[5:]:
         if z is None or z < 1.8: continue
         if any(abs(a["t"] - sv[0]) < 1.0 for a in attempts): continue
         attempts.append({"t": sv[0], "side": "near"})
+    # near player's serve whose flight was not caught (the toss and the contact are above the picture, the bounce in the far box
+    # missed): a loud hit, the far player's return heard 0.5-1.6 s later and that return bouncing in the near half 0.9-2.6 s after
+    for h in loud:
+        if any(abs(a["t"] - h) < 1.5 for a in attempts): continue
+        if not any(0.5 < x - h < 1.6 for x in hits): continue
+        if any(0.9 < b["t"] - h < 2.6 and b["court"][1] < 11.885 for b in bs): attempts.append({"t": h, "side": "far", "est": True})
     # far player's serve whose sound and flight were not caught: a bounce in a near service box that the near player returns
     # (loud hit 0.2-1.0 s later); the dead-time check below keeps rally shots out
     for bb in bs:
