@@ -155,6 +155,12 @@ for arg in sys.argv[5:]:
         if z is None or z < 1.8: continue
         if any(abs(a["t"] - sv[0]) < 1.0 for a in attempts): continue
         attempts.append({"t": sv[0], "side": "near"})
+    # far player's serve whose sound and flight were not caught: a bounce in a near service box that the near player returns
+    # (loud hit 0.2-1.0 s later); the dead-time check below keeps rally shots out
+    for bb in bs:
+        x, y = bb["court"]
+        if not NEAR_BOX(x, y) or any(abs(a["t"] - (bb["t"] - 0.6)) < 1.2 for a in attempts): continue
+        if any(0.2 < h - bb["t"] < 1.0 for h in loud): attempts.append({"t": bb["t"] - 0.6, "side": "near"})
     attempts.sort(key=lambda a: a["t"])
     # a serve comes after dead time: no shot by the near player and no bounce inside the court in the 4 s before
     # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
@@ -182,10 +188,10 @@ for arg in sys.argv[5:]:
 # --- faults (over the whole match): a serve that is not played back and is followed by another serve within 25 s was a fault ---
 ALL_ATTEMPTS.sort(key=lambda a: a["t"])
 points, i = [], 0
-# a "serve" less than 15 s after a serve that was played back is a shot in that rally (an overhead or a high ball)
+# a "serve" less than 6 s after a serve that was played back is a shot in that rally (an overhead or a high ball)
 kept = []
 for a_ in ALL_ATTEMPTS:
-    if kept and kept[-1]["returned"] and a_["t"] - kept[-1]["t"] < 15: continue
+    if kept and kept[-1]["returned"] and a_["t"] - kept[-1]["t"] < (15 if a_["side"] != kept[-1]["side"] else 6): continue
     kept.append(a_)
 ALL_ATTEMPTS = kept
 while i < len(ALL_ATTEMPTS):
@@ -197,9 +203,11 @@ while i < len(ALL_ATTEMPTS):
     same_server = nx is not None and nx["side"] == a_["side"] and gap_next < 30
     if same_server and half(a_) and half(nx):
         fault = half(a_) == half(nx)          # a second serve comes from the same half; the next point from the other half
-    else:
+    elif same_server:
         # not played back and served again within 25 s, or served again within 15 s (no time to play a point): a fault
         fault = (not a_["returned"] and gap_next < 25) or gap_next < 15
+    else:
+        fault = False                         # the other player serving: not a second serve
     if fault:
         a_["fault"] = True
         if a_["bounce"] is not None: a_["bounce"]["call"] = "OUT"      # they served again, so it was out
