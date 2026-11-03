@@ -158,6 +158,13 @@
   // サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
   const FAULT_QUIETER_DB = 3.0; // 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
   const FAULT_LOUDER_DB = 4.0; // 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）
+  // ポイントの合間にカメラの近くでボールを拾う音・足音・ボールつきが 1〜2 秒おきに続くと、前のラリーと次のサーブが
+  // つながってしまう（実際の試合動画で、ポイント間が 12 秒しかない場面）。大きな打球（手前の選手の打球）が
+  // これだけの間なく、小さな音だけが続いたあとの大きな打球は、新しいポイントのサーブ（またはリターン）とする
+  const LOUD_BELOW_TOP_DB = 6.0; // 大きな打球: 動画内の打球の上位 10% の音量から、これ以内
+  const SERVE_PAUSE_SEC = 9.0; // ラリー中、手前の選手は 2〜4 秒ごとに打つ（弱い打球が続いても 8 秒未満だった）
+  const PRE_SERVE_SEC = 1.6; // 新しいポイントの大きな打球の直前、これ以内の小さな音は奥の選手のサーブとして残す
+  const RALLY_TAIL_SEC = 2.5; // 最後の大きな打球のあと、これ以内の小さな音は前のポイントの続き（奥の選手の最後の打球）
 
   function trimQuiet(g) {
     const ref = percentile(g.map(function (h) { return h.s; }), 75);
@@ -186,6 +193,27 @@
     return out.filter(function (x) { return x.length; });
   }
 
+  /* 小さな音だけが SERVE_PAUSE_SEC 以上続いたあとの大きな打球で区切る。間の小さな音（ボール拾い・足音）は除く */
+  function splitAtPauses(g, loud) {
+    const out = [];
+    let cur = [], lastLoud = null;
+    g.forEach(function (h) {
+      if (h.lv >= loud) {
+        const since = h.t - (lastLoud !== null ? lastLoud : cur.length ? cur[0].t : h.t);
+        if (cur.length && since >= SERVE_PAUSE_SEC) {
+          const prev = lastLoud;
+          const tail = cur.filter(function (x) { return prev !== null && x.t - prev <= RALLY_TAIL_SEC; });
+          if (tail.length) out.push(tail);
+          cur = cur.filter(function (x) { return h.t - x.t <= PRE_SERVE_SEC; });
+        }
+        lastLoud = h.t;
+      }
+      cur.push(h);
+    });
+    out.push(cur);
+    return out.filter(function (x) { return x.length; });
+  }
+
   /* levels は各打球の元の音量 (dB)、strengths は背景からの差 */
   function findPoints(times, strengths, st, levels) {
     levels = levels || strengths;
@@ -195,6 +223,8 @@
       if (g && t - g[g.length - 1].t <= st.maxShotGapSec) g.push(h);
       else groups.push([h]);
     });
+    const loud = levels.length ? percentile(levels, 90) - LOUD_BELOW_TOP_DB : 0;
+    groups = [].concat.apply([], groups.map(function (g) { return splitAtPauses(g, loud); }));
     groups = [].concat.apply([], groups.map(splitAtServes)).map(trimQuiet);
 
     const multi = groups.filter(function (g) { return g.length >= Math.max(2, st.minHits); });
@@ -209,7 +239,9 @@
       const beforeServe = next && g.length <= MAX_FAULT_HITS && next[0].t - g[g.length - 1].t <= st.secondServeGapSec;
       const diff = beforeServe ? g[0].lv - next[0].lv : 0;
       // サーブの直前の小さな音（ボールつき・隣のコートの打球）。ポイントには入れない
-      if (beforeServe && diff < -FAULT_QUIETER_DB) continue;
+      let loudest = -Infinity;
+      g.forEach(function (h) { loudest = Math.max(loudest, h.lv); });
+      if (beforeServe && loudest < loud && loudest - next[0].lv < -FAULT_QUIETER_DB) continue;
       if (beforeServe && isServe(g) && diff <= FAULT_LOUDER_DB) {
         const first = part(g, true), second = part(next, false);
         points.push({ start: first.start, end: second.end, hits: first.hits + second.hits, parts: [first, second] });
