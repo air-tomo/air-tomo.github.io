@@ -354,6 +354,13 @@
         if (list.some(function (a) { return Math.abs(a.t - sv[0]) < 1.0; })) return;
         list.push({ t: sv[0], side: 'near' });
       });
+      // 手前の選手のサーブで軌道が取れなかったもの（トスと打点が画面の上、奥のボックスのバウンドも取れない）:
+      // 大きい打球音の 0.5〜1.6 秒後に奥の選手の返球音、0.9〜2.6 秒後にその返球が手前の半面でバウンド
+      loud.forEach(function (h) {
+        if (list.some(function (a) { return Math.abs(a.t - h) < 1.5; })) return;
+        if (!hits.some(function (x) { return x - h > 0.5 && x - h < 1.6; })) return;
+        if (bs.some(function (b) { return b.t - h > 0.9 && b.t - h < 2.6 && b.court[1] < 11.885; })) list.push({ t: h, side: 'far', est: true });
+      });
       // 奥の選手のサーブで音も軌道も取れなかったもの: 手前のサービスボックスに落ちて、手前の選手が 0.2〜1.0 秒後に打ち返す
       bs.forEach(function (bb) {
         if (!nearBox(bb.court[0], bb.court[1]) || list.some(function (a) { return Math.abs(a.t - (bb.t - 0.6)) < 1.2; })) return;
