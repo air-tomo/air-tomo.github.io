@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>テニス試合解析</title>
+<style>
+  :root { --bg: #f6f7f9; --text: #1c1f23; --muted: #6b7280; --card: #fff; --border: #e3e6ea; --accent: #2563eb; --accent-text: #fff;
+          --in: #16a34a; --out: #dc2626; --close: #d97706; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #111418; --text: #e8eaed; --muted: #9aa0a6; --card: #1b1f24; --border: #2c3138; --accent: #4f8cff; } }
+  :root[data-theme="dark"] { --bg: #111418; --text: #e8eaed; --muted: #9aa0a6; --card: #1b1f24; --border: #2c3138; --accent: #4f8cff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+  h1 { font-size: 1.3rem; margin: 4px 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  p, .hint { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-top: 14px; }
+  label.file { display: block; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; margin-bottom: 10px; }
+  label.file span { display: block; font-size: .85rem; color: var(--muted); }
+  button { font-family: inherit; }
+  .primary { width: 100%; height: 50px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-size: 1.02rem; }
+  .primary:disabled { opacity: .45; }
+  .secondary { height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font-size: .92rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .stage { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; touch-action: none; }
+  .stage video, .stage canvas { display: block; width: 100%; height: auto; }
+  .stage canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .loupe { position: absolute; width: 120px; height: 120px; border-radius: 60px; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; display: none; }
+  .points { list-style: none; padding: 0; margin: 8px 0 0; }
+  .points li { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .points li:last-child { border-bottom: 0; }
+  .points .info { flex: 1; min-width: 0; font-size: .9rem; }
+  .points .info span { display: block; color: var(--muted); font-size: .8rem; }
+  .chip { display: inline-block; padding: 0 6px; border-radius: 6px; font-size: .75rem; color: #fff; margin-right: 3px; }
+  .chip.IN { background: var(--in); } .chip.OUT { background: var(--out); } .chip.CLOSE { background: var(--close); }
+  .play { flex: none; width: 42px; height: 42px; border-radius: 21px; border: 0; background: var(--accent); color: var(--accent-text); }
+  .playing { outline: 2px solid var(--accent); border-radius: 8px; }
+  .err { color: var(--out); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎾 テニス試合解析（試作）</h1>
+  <p>試合動画から、ポイントごとのボールの軌跡・バウンド・イン/アウト・サーブ速度を出します。解析はすべてこの端末の中で行い、動画は外に送りません。</p>
+
+  <section class="card" id="stepSelect">
+    <h2>1. 動画とボール検出モデル</h2>
+    <label class="file">動画（コートの真後ろ・横向きで撮った試合）<input type="file" id="video" accept="video/*,.mov,.mp4"><span id="videoName"></span></label>
+    <label class="file">ボール検出モデル（.onnx）<input type="file" id="model" accept=".onnx"><span id="modelName">一度読み込むとこの端末に保存されます</span></label>
+    <button class="primary" id="startBtn" disabled>読み込む</button>
+    <p class="hint" style="margin-top:8px">1 ポイントずつ解析するので、長い試合は時間がかかります。画面を閉じずにお待ちください。</p>
+  </section>
+
+  <section class="card" id="stepProgress" hidden>
+    <h2 id="progTitle">準備しています</h2>
+    <div class="bar"><div id="progBar"></div></div>
+    <p id="progText"></p>
+    <p class="err" id="error" hidden></p>
+  </section>
+
+  <section class="card" id="stepCalib" hidden>
+    <h2>2. コートの位置合わせ</h2>
+    <p id="calibGuide"></p>
+    <div class="stage" id="calibStage"><canvas id="calibCanvas"></canvas><canvas class="overlay" id="calibOverlay"></canvas><div class="loupe" id="loupe"></div></div>
+    <div class="row" style="margin-top:10px">
+      <button class="secondary" id="undoBtn">1 つ戻す</button>
+      <button class="secondary" id="skipPostBtn" hidden>ネットポストは省略</button>
+      <button class="secondary" id="otherFrameBtn">別の場面にする</button>
+    </div>
+    <div id="calibResult" hidden>
+      <p class="hint" id="calibInfo" style="margin-top:10px"></p>
+      <div class="row"><button class="primary" id="calibOkBtn" style="flex:1">この位置合わせで解析する</button></div>
+    </div>
+  </section>
+
+  <section class="card" id="stepResult" hidden>
+    <h2>3. 結果</h2>
+    <p id="summary"></p>
+    <div class="stage" id="playStage"><video id="player" playsinline preload="auto"></video><canvas class="overlay" id="playOverlay"></canvas></div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="playAllBtn">続けて再生</button><button class="secondary" id="stopBtn">止める</button></div>
+    <ul class="points" id="points"></ul>
+  </section>
+</main>
+<script src="../mp4.js"></script>
+<script src="../detect.js"></script>
+<script src="../court.js"></script>
+<script src="../ball.js"></script>
+<script src="../rally.js"></script>
+<script type="module">
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.mjs";
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+window.ort = ort;
+await import("./analyze.js");
+</script>
+</body>
+</html>
