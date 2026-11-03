@@ -29,7 +29,7 @@ args = []
 for k, c in enumerate(match["clips"]):
     out = os.path.join(a.outdir, "tn_%03d.json" % k)
     if not os.path.exists(out):
-        subprocess.run([sys.executable, os.path.join(HERE, "tn_run.py"), a.video, str(c["start"]), str(c["end"] - c["start"]), out, a.model], check=True)
+        subprocess.run([sys.executable, os.path.join(HERE, "tn_roi.py" if os.environ.get("ROI", "1") == "1" else "tn_run.py"), a.video, str(c["start"]), str(c["end"] - c["start"]), out, a.model], check=True)
     args.append("%d:%s" % (k, out))
 post = os.path.join(a.outdir, "tn_post.json")
 subprocess.run([sys.executable, os.path.join(HERE, "tn_post.py"), mj, a.cam, env_path, post] + args, check=True)

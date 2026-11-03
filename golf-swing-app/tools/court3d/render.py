@@ -13,6 +13,7 @@ f_big, f_small = ImageFont.truetype(FONT, 26), ImageFont.truetype(FONT, 16)
 M = json.load(open(MATCH)); N = len(M["clips"])
 for k, v in TN.items():
     c = M["clips"][int(k)]; c["ball"] = v["ball"]; c["bounces"] = v["bounces"]; c["serve"] = v.get("serve")
+    if v.get("point_end"): c["end"] = min(c["end"], v["point_end"])   # the ball tells when the point is over
 # top-down map
 MX, MY, MS = W - 170, 60, 12.0   # left, top, px per metre
 def mp(x, y): return (MX + 75 + x * MS, MY + 300 - y * MS * 0.5 * 2 * 0.5 * 2 * 0.5 * 2 / 2)  # placeholder, replaced below
