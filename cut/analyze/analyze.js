@@ -191,7 +191,7 @@ $('calibOkBtn').addEventListener('click', async () => {
     const cam = Rally.camera(state.cam);
     const total = state.clips.reduce((s, c) => s + c.end - c.start, 0);
     let done = 0; const t0 = performance.now();
-    state.results = [];
+    const clipData = [];
     for (let k = 0; k < state.clips.length; k++) {
       const c = state.clips[k];
       const pts = await Ball.track(state.reader, state.info, c.start, c.end, det, (r) => {
@@ -199,30 +199,39 @@ $('calibOkBtn').addEventListener('click', async () => {
         progress('ボールを追っています（' + (det.ep === 'webgpu' ? 'GPU' : 'CPU') + '）', d / total,
           'ラリー ' + (k + 1) + ' / ' + state.clips.length + '・残り約 ' + (eta < 90 ? Math.round(eta) + ' 秒' : Math.round(eta / 60) + ' 分'));
       });
-      state.results.push(Rally.analyzeClip(pts, state.allHits, state.loudHits, c, cam));
+      clipData.push({ start: c.start, end: c.end, pts: pts });
       done += c.end - c.start;
     }
+    progress('ポイントを組み立てています', 1);
+    state.match = Rally.analyzeMatch(clipData, state.allHits, state.loudHits, cam);
     buildPoints(); show('stepResult');
   } catch (e) { fail(e); }
 });
 
 function buildPoints() {
-  state.points = [];
-  state.results.forEach((r) => r.ranges.forEach((rg) => {
-    const bs = r.bounces.filter((b) => b.t >= rg[0] && b.t <= rg[1]);
-    const sv = r.points.map((p) => p.serve).find((s) => s && s.t >= rg[0] && s.t <= rg[1] && s.rms_px < 3 && s.kmh > 60 && s.kmh < 190);
-    state.points.push({ start: rg[0], end: rg[1], bounces: bs, serve: sv || null, ball: r.ball });
-  }));
-  const total = state.points.reduce((s, p) => s + p.end - p.start, 0);
+  // 1 ポイント = （1st サーブのフォルト +）サーブとラリー。サーブの間の待ち時間は飛ばして続けて再生する
+  const m = state.match;
+  state.points = m.points.map((pt) => {
+    const parts = pt.ranges.map((rg, j) => {
+      const cl = m.clips[rg[0]], sv = pt.serves[j];
+      const speed = sv.speed && sv.speed.rms_px < 3 && sv.speed.kmh > 60 && sv.speed.kmh < 190 ? sv.speed : null;
+      return { start: rg[1], end: rg[2], ball: cl.ball, bounces: cl.bounces.filter((b) => b.t >= rg[1] && b.t <= rg[2]), serve: speed,
+               tag: sv.fault ? (j === 0 && pt.ranges.length > 1 ? '1st フォルト' : 'ダブルフォルト') : j === 1 ? 'セカンド' : '' };
+    });
+    return { parts: parts, start: parts[0].start, end: parts[parts.length - 1].end };
+  });
+  const total = state.points.reduce((s, p) => s + p.parts.reduce((a, q) => a + q.end - q.start, 0), 0);
   $('summary').textContent = state.points.length + ' ポイント・合計 ' + fmt(total) + '（元の動画 ' + fmt(state.info.duration) + '）。▶ で再生すると、ボールの軌跡・バウンド・イン/アウトが重なって表示されます。';
   const ul = $('points'); ul.innerHTML = '';
   state.points.forEach((p, i) => {
     const li = document.createElement('li'); li.id = 'pt' + i;
     const info = document.createElement('div'); info.className = 'info';
-    const b = document.createElement('b'); b.textContent = 'ポイント ' + (i + 1) + (p.serve ? '・サーブ ' + p.serve.kmh + 'km/h' : '');
-    const s = document.createElement('span'); s.textContent = '元 ' + fmt(p.start) + '〜' + fmt(p.end) + '・' + (p.end - p.start).toFixed(1) + ' 秒';
+    const sp = p.parts.map((q) => q.serve).find((x) => x);
+    const tags = p.parts.map((q) => q.tag).filter((x) => x).join('→');
+    const b = document.createElement('b'); b.textContent = 'ポイント ' + (i + 1) + (tags ? '（' + tags + '）' : '') + (sp ? '・サーブ ' + sp.kmh + 'km/h' : '');
+    const s = document.createElement('span'); s.textContent = '元 ' + fmt(p.start) + '〜' + fmt(p.end);
     const calls = document.createElement('span');
-    p.bounces.forEach((x) => { const c = document.createElement('i'); c.className = 'chip ' + x.call; c.textContent = x.call === 'CLOSE' ? '微妙' : x.call; calls.appendChild(c); });
+    p.parts.forEach((q) => q.bounces.forEach((x) => { const c = document.createElement('i'); c.className = 'chip ' + x.call; c.textContent = x.call === 'CLOSE' ? '微妙' : x.call; calls.appendChild(c); }));
     info.append(b, s, calls);
     const play = document.createElement('button'); play.className = 'play'; play.textContent = '▶'; play.addEventListener('click', () => startPlay([i]));
     li.append(info, play); ul.appendChild(li);
@@ -232,13 +241,17 @@ function buildPoints() {
 
 // ---- 再生と重ね描き ----
 
-function startPlay(list) { state.playQueue = list.slice(); next(); }
+function startPlay(list) {
+  state.playQueue = [];
+  list.forEach((i) => state.points[i].parts.forEach((q) => state.playQueue.push([i, q])));
+  next();
+}
 function next() {
   document.querySelectorAll('.points li.playing').forEach((el) => el.classList.remove('playing'));
   if (!state.playQueue || !state.playQueue.length) { $('player').pause(); state.current = null; return; }
-  const i = state.playQueue.shift(), p = state.points[i]; state.current = p;
-  const el = $('pt' + i); if (el) { el.classList.add('playing'); }
-  $('player').currentTime = p.start; $('player').play().catch(() => {});
+  const [i, q] = state.playQueue.shift(); state.current = q;
+  const el = $('pt' + i); if (el) el.classList.add('playing');
+  $('player').currentTime = q.start; $('player').play().catch(() => {});
 }
 $('playAllBtn').addEventListener('click', () => startPlay(state.points.map((_, i) => i)));
 $('stopBtn').addEventListener('click', () => { state.playQueue = []; next(); });
@@ -281,6 +294,10 @@ function drawOverlay() {
     if (b.t > t) return; const q = mp(b.court[0], b.court[1]);
     g.fillStyle = COL[b.call]; g.beginPath(); g.arc(q[0], q[1], t - b.t < 1.5 ? 4 : 2.5, 0, Math.PI * 2); g.fill();
   });
+  if (p.tag) {
+    g.font = 'bold 16px sans-serif'; const w = g.measureText(p.tag).width + 16;
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(8, H - 38, w, 28); g.fillStyle = '#fff'; g.fillText(p.tag, 16, H - 18);
+  }
   if (p.serve && t >= p.serve.t) {
     g.fillStyle = 'rgba(200,30,30,.85)'; g.fillRect(8, 8, 150, 30); g.fillStyle = '#fff'; g.font = 'bold 17px sans-serif';
     g.fillText('サーブ ' + p.serve.kmh + ' km/h', 16, 29);
