@@ -362,7 +362,8 @@
       list.sort(function (a, b) { return a.t - b.t; });
       const dead = function (h) {     // サーブの前 4 秒は、手前の選手の打球もコート内のバウンドもない
         if (loud.some(function (x) { return h - x > 0.4 && h - x < 4.0; })) return false;
-        return !bs.some(function (b) { return h - b.t > 0.3 && h - b.t < 4.0 && b.court[1] > 1.5 && b.court[1] < 22.3; });
+        // ベースライン付近のバウンドはサーバーのボールつき（カメラが低いと奥は 1〜2m 手前に出る）
+        return !bs.some(function (b) { return h - b.t > 0.3 && h - b.t < 4.0 && b.court[1] > 1.5 && b.court[1] < 20.0; });
       };
       list.filter(function (a) { return dead(a.t); }).forEach(function (a) {
         const sb = bs.find(function (b) { return b.t - a.t > 0.25 && b.t - a.t < 1.3; }) || null;

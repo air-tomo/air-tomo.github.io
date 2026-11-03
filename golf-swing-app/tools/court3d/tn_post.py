@@ -170,7 +170,8 @@ for arg in sys.argv[5:]:
     # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
     def dead_before(h):
         if any(0.4 < h - x < 4.0 for x in loud): return False
-        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 22.3 for b in bs)
+        # bounces near a baseline are the server bouncing the ball (the far side reads 1-2 m short with a low camera)
+        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 20.0 for b in bs)
     attempts = [a_ for a_ in attempts if dead_before(a_["t"])]
     # --- each attempt: serve bounce, returned?, rally ---
     for i, a_ in enumerate(attempts):
