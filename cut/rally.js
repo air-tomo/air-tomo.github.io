@@ -350,6 +350,11 @@
         if (list.some(function (a) { return Math.abs(a.t - sv[0]) < 1.0; })) return;
         list.push({ t: sv[0], side: 'near' });
       });
+      // 奥の選手のサーブで音も軌道も取れなかったもの: 手前のサービスボックスに落ちて、手前の選手が 0.2〜1.0 秒後に打ち返す
+      bs.forEach(function (bb) {
+        if (!nearBox(bb.court[0], bb.court[1]) || list.some(function (a) { return Math.abs(a.t - (bb.t - 0.6)) < 1.2; })) return;
+        if (loud.some(function (h) { return h - bb.t > 0.2 && h - bb.t < 1.0; })) list.push({ t: bb.t - 0.6, side: 'near' });
+      });
       list.sort(function (a, b) { return a.t - b.t; });
       const dead = function (h) {     // サーブの前 4 秒は、手前の選手の打球もコート内のバウンドもない
         if (loud.some(function (x) { return h - x > 0.4 && h - x < 4.0; })) return false;
@@ -370,15 +375,22 @@
     });
     attempts.sort(function (a, b) { return a.t - b.t; });
     const all = [];
-    attempts.forEach(function (a) {   // 返球されたサーブの 15 秒以内の「サーブ」はラリー中のスマッシュなど
+    attempts.forEach(function (a) {   // 返球されたサーブの 6 秒以内の「サーブ」はラリー中のスマッシュなど
       const last = all[all.length - 1];
-      if (last && last.returned && a.t - last.t < 15) return;
+      if (last && last.returned && a.t - last.t < (a.side !== last.side ? 15 : 6)) return;
       all.push(a);
     });
     const groups = [];
     for (let i = 0; i < all.length; i++) {
-      const a = all[i], parts = [a], gapNext = i + 1 < all.length ? all[i + 1].t - a.t : 1e9;
-      if ((!a.returned && gapNext < 25) || gapNext < 15) {     // 返球されずに、またサーブを打った: フォルト
+      const a = all[i], parts = [a], nx = all[i + 1] || null, gapNext = nx ? nx.t - a.t : 1e9;
+      // サーバーが立っていた側: サーブはクロスに打つので、入ったボックスの反対側
+      const half = function (s) { return s.bounce && Math.abs(s.bounce.court[0]) > 0.5 ? -Math.sign(s.bounce.court[0]) : 0; };
+      let fault;
+      const same = nx && nx.side === a.side;
+      if (same && gapNext < 30 && half(a) && half(nx)) fault = half(a) === half(nx);   // セカンドサーブは同じ側から、次のポイントは反対側から
+      else if (same) fault = (!a.returned && gapNext < 25) || gapNext < 15;   // 返球されずに、またサーブを打った
+      else fault = false;                                                       // 相手のサーブ: セカンドサーブではない
+      if (fault) {     // フォルト
         a.fault = true; if (a.bounce) a.bounce.call = 'OUT';
         parts.push(all[i + 1]); i++;
       }
