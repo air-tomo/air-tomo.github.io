@@ -232,9 +232,10 @@ function buildPoints() {
   const line = (name, x) => x.n ? name + ' ' + x.n + ' ポイント・1st サーブ ' + Math.round(x.first / x.n * 100) + '%・ダブルフォルト ' + x.df +
     (x.sp.length ? '・速度 平均 ' + Math.round(x.sp.reduce((a, b) => a + b, 0) / x.sp.length) + 'km/h（最高 ' + Math.max.apply(null, x.sp) + '）' : '') : '';
   const calls = { IN: 0, OUT: 0, CLOSE: 0 }; m.clips.forEach((c) => c.bounces.forEach((b) => calls[b.call]++));
+  const serveLines = [line('手前の選手のサーブ:', st.far), line('奥の選手のサーブ:', st.near)].filter((x) => x);
   $('summary').textContent = state.points.length + ' ポイント・合計 ' + fmt(total) + '（元の動画 ' + fmt(state.info.duration) + '）。' +
-    [line('手前の選手のサーブ:', st.far), line('奥の選手のサーブ:', st.near)].filter((x) => x).join(' ／ ') +
-    '。バウンド IN ' + calls.IN + '・OUT ' + calls.OUT + '・微妙 ' + calls.CLOSE + '。▶ で再生すると、ボールの軌跡・バウンド・イン/アウトが重なって表示されます。';
+    (serveLines.length ? serveLines.join(' ／ ') + '。' : '') +
+    'バウンド IN ' + calls.IN + '・OUT ' + calls.OUT + '・微妙 ' + calls.CLOSE + '。▶ で再生すると、ボールの軌跡・バウンド・イン/アウトが重なって表示されます。';
   const ul = $('points'); ul.innerHTML = '';
   state.points.forEach((p, i) => {
     const li = document.createElement('li'); li.id = 'pt' + i;
