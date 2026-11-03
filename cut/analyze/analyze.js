@@ -214,7 +214,7 @@ function buildPoints() {
   state.points = m.points.map((pt) => {
     const parts = pt.ranges.map((rg, j) => {
       const cl = m.clips[rg[0]], sv = pt.serves[j];
-      const speed = sv.speed && sv.speed.rms_px < 3 && sv.speed.kmh > 60 && sv.speed.kmh < 190 ? sv.speed : null;
+      const speed = sv.speed && sv.speed.med_px < 7 && sv.speed.kmh > 60 && sv.speed.kmh < 190 ? sv.speed : null;
       return { start: rg[1], end: rg[2], ball: cl.ball, bounces: cl.bounces.filter((b) => b.t >= rg[1] && b.t <= rg[2]), serve: speed,
                tag: sv.fault ? (j === 0 && pt.ranges.length > 1 ? '1st フォルト' : 'ダブルフォルト') : j === 1 ? 'セカンド' : '' };
     });
@@ -227,7 +227,7 @@ function buildPoints() {
     const s0 = pt.serves[0], x = st[s0.side]; x.n++;
     if (!s0.fault) x.first++;
     if (pt.serves.length === 2 && pt.serves[1].fault) x.df++;
-    pt.serves.forEach((sv) => { if (sv.speed && sv.speed.rms_px < 3 && sv.speed.kmh > 60 && sv.speed.kmh < 190) x.sp.push(sv.speed.kmh); });
+    pt.serves.forEach((sv) => { if (sv.speed && sv.speed.med_px < 7 && sv.speed.kmh > 60 && sv.speed.kmh < 190) x.sp.push(sv.speed.kmh); });
   });
   const line = (name, x) => x.n ? name + ' ' + x.n + ' ポイント・1st サーブ ' + Math.round(x.first / x.n * 100) + '%・ダブルフォルト ' + x.df +
     (x.sp.length ? '・速度 平均 ' + Math.round(x.sp.reduce((a, b) => a + b, 0) / x.sp.length) + 'km/h（最高 ' + Math.max.apply(null, x.sp) + '）' : '') : '';

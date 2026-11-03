@@ -180,7 +180,10 @@
     };
     const s = leastSquares(fn, [0, -0.5, 2.6, gb[0] / tb, (gb[1] + 0.5) / tb, -1.0], 2.0);
     let ss = 0; for (let i = 0; i < 2 * obs.length; i++) ss += s.fun[i] * s.fun[i];
-    return { kmh: Math.round(Math.hypot(s.x[3], s.x[4], s.x[5]) * 3.6), rms_px: r2(Math.sqrt(ss / (2 * obs.length))), contact: s.x.slice(0, 3).map(r2) };
+    // フレームごとの誤差の中央値（他のボールを拾った数フレームに引きずられない）
+    const per = []; for (let i = 0; i < obs.length; i++) per.push(Math.hypot(s.fun[2 * i], s.fun[2 * i + 1]));
+    return { kmh: Math.round(Math.hypot(s.x[3], s.x[4], s.x[5]) * 3.6), rms_px: r2(Math.sqrt(ss / (2 * obs.length))), med_px: r2(median(per)),
+             contact: s.x.slice(0, 3).map(r2) };
   }
 
   // ---- イン・アウトとポイント ----

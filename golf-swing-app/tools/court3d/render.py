@@ -55,7 +55,7 @@ def draw_frame(img, t, clip, k, title):
         d.ellipse([x - r, y - r, x + r, y + r], fill=col + (255 if recent else 170,), outline=(0, 0, 0, 255))
     d.text((MX, MY + 310), "奥側は ±1m 程度", font=f_small, fill=(220, 220, 220, 255))
     sv = clip.get("serve")
-    if sv and t >= sv["t"] and sv["rms_px"] < 3 and 60 < sv["kmh"] < 190:
+    if sv and t >= sv["t"] and sv.get("med_px", sv["rms_px"]) < 7 and 60 < sv["kmh"] < 190:
         d.rounded_rectangle([12, 60, 300, 100], 8, fill=(200, 30, 30, 200))
         d.text((24, 65), "サーブ %d km/h" % sv["kmh"], font=f_big, fill=(255, 255, 255, 255))
     # header

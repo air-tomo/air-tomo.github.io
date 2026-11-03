@@ -63,7 +63,10 @@ def serve_speed(P, bounce, hit):
     q0 = np.array([0, -0.5, 2.6, (gb[0]) / tb, (gb[1] + 0.5) / tb, -1.0])
     s = least_squares(res, q0, loss="soft_l1", f_scale=2.0)
     rms = float(np.sqrt(np.mean(s.fun[:2 * len(obs)] ** 2)))
-    return {"kmh": round(float(np.linalg.norm(s.x[3:])) * 3.6), "rms_px": round(rms, 2), "contact": [round(float(v), 2) for v in s.x[:3]]}
+    # median per-frame error: a few frames on another ball (balls lying around) do not spoil it
+    med = float(np.median(np.hypot(s.fun[0:2 * len(obs):2], s.fun[1:2 * len(obs):2])))
+    return {"kmh": round(float(np.linalg.norm(s.x[3:])) * 3.6), "rms_px": round(rms, 2), "med_px": round(med, 2),
+            "contact": [round(float(v), 2) for v in s.x[:3]]}
 M = json.load(open(MATCH)); res = {}
 ALL_HITS = sorted(times)                       # every racket/ball sound (quiet ones too)
 FAR_BOX = lambda x, y: 11.6 <= y <= 19.3 and abs(x) <= 4.7
