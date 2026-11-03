@@ -63,8 +63,8 @@ def draw_frame(img, t, clip, k, title):
     d.text((24, 17), title, font=f_big, fill=(255, 255, 255, 255))
     return np.asarray(pil)
 def render(job):
-    n, k, a, b = job
-    clip = M["clips"][k]; title = "ポイント %d  (元 %s)" % (n, fmt(a))
+    n, k, a, b, name = job
+    clip = M["clips"][k]; title = "%s  (元 %s)" % (name or "ポイント %d" % n, fmt(a))
     out = os.path.join(OUTDIR, "c%03d.mp4" % n)
     dec = subprocess.Popen(["ffmpeg", "-nostdin", "-v", "error", "-ss", "%.3f" % a, "-i", VIDEO, "-t", "%.3f" % (b - a),
                             "-vf", "fps=%d,crop=%d:%d:%d:%d,scale=%d:%d,format=rgb24" % (FPS, CWID, CWID * 9 // 16, CX, CY, W, H), "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
@@ -84,10 +84,21 @@ if __name__ == "__main__":
     os.makedirs(OUTDIR, exist_ok=True)
     ks = list(range(N)) if len(sys.argv) < 6 else [int(x) for x in sys.argv[5].split(",")]
     jobs = []
+    pts = {}
     for k in ks:
-        c = M["clips"][k]
-        for a, b in c.get("ranges", [[c["start"], c["end"]]]):
-            if b - a > 1.0: jobs.append((len(jobs) + 1, k, a, b))
+        for p in TN.get(str(k), {}).get("points", []): pts[p["serves"][0]["t"]] = p
+    if pts:   # one point = (1st serve fault +) serve + rally; the waiting time between the serves is left out
+        for n, key in enumerate(sorted(pts), 1):
+            p = pts[key]
+            for j, (k, a, b) in enumerate(p["ranges"]):
+                sv = p["serves"][j]
+                tag = "（1st フォルト）" if sv["fault"] and j == 0 and len(p["ranges"]) > 1 else "（ダブルフォルト）" if sv["fault"] else "（セカンド）" if j == 1 else ""
+                if b - a > 1.0: jobs.append((len(jobs) + 1, k, a, b, "ポイント %d%s" % (n, tag)))
+    else:
+        for k in ks:
+            c = M["clips"][k]
+            for a, b in c.get("ranges", [[c["start"], c["end"]]]):
+                if b - a > 1.0: jobs.append((len(jobs) + 1, k, a, b, None))
     with Pool(4) as p: files = p.map(render, jobs)
     lst = os.path.join(OUTDIR, "list.txt")
     open(lst, "w").write("".join("file '%s'\n" % f for f in files))
