@@ -32,13 +32,23 @@ def find_bounces(P):
     out = []
     for i in range(2, len(P) - 2):
         (ta, xa, ya), (t1, x1, y1), (tb, xb, yb) = P[i - 2], P[i], P[i + 2]
-        if tb - ta > 0.2: continue
+        if tb - ta > 0.3: continue
         if not (y1 >= P[i - 1][2] and y1 >= P[i + 1][2] and y1 - ya > 3 and y1 - yb > 3): continue
         if any(abs(t1 - h) < 0.07 for h in loud_hits): continue      # racket of the near player
+        # the frame nearest the bounce may miss the lowest point: intersect the falling and the rising paths
+        pre = [q for q in P[max(0, i - 3):i + 1] if t1 - q[0] < 0.25]; post = [q for q in P[i:i + 4] if q[0] - t1 < 0.25]
+        if len(pre) >= 2 and len(post) >= 2:
+            tp = np.array([q[0] for q in pre]); tq = np.array([q[0] for q in post])
+            ax, bx = np.polyfit(tp, [q[1] for q in pre], 1); ay, by = np.polyfit(tp, [q[2] for q in pre], 1)
+            cx, dx = np.polyfit(tq, [q[1] for q in post], 1); cy, dy = np.polyfit(tq, [q[2] for q in post], 1)
+            if abs(ay - cy) > 1e-6:
+                tc = (dy - by) / (ay - cy)
+                if pre[0][0] - 0.05 <= tc <= post[-1][0] + 0.05:
+                    t1, x1, y1 = float(tc), float(ax * tc + bx), float(ay * tc + by)
         g = ground(x1, y1)
         if not (-7 < g[0] < 7 and -2 < g[1] < 26): continue
         if out and t1 - out[-1]["t"] < 0.4: continue
-        out.append({"t": round(t1, 3), "uv": [x1, y1], "court": [round(float(g[0]), 2), round(float(g[1]), 2)]})
+        out.append({"t": round(t1, 3), "uv": [round(x1, 1), round(y1, 1)], "court": [round(float(g[0]), 2), round(float(g[1]), 2)]})
     return out
 def serve_speed(P, bounce, hit):
     """3D flight from the hit (audio time, contact prior) to the observed bounce point on the ground."""
