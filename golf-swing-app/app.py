@@ -132,7 +132,7 @@ def upload():
             pre_sec=_float_arg("pre_sec", 1.5, 0, 15),
             post_sec=_float_arg("post_sec", 2.0, 0, 15),
             sensitivity=int(_float_arg("sensitivity", 6, 1, 10)),
-            max_shot_gap_sec=_float_arg("max_shot_gap_sec", 4.0, 1, 15),
+            max_shot_gap_sec=_float_arg("max_shot_gap_sec", 5.0, 1, 15),
             min_hits=int(_float_arg("min_hits", 2, 1, 10)),
             keep_serve_only=request.form.get("keep_serve_only") == "1",
             second_serve_gap_sec=_float_arg("second_serve_gap_sec", 12.0, 0, 60),
