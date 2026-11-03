@@ -13,6 +13,7 @@ sys.path.insert(0, APP)
 import numpy as np, swing, tennis
 ap = argparse.ArgumentParser(); ap.add_argument("video"); ap.add_argument("cam"); ap.add_argument("model"); ap.add_argument("outdir")
 ap.add_argument("--start", type=float, default=0.0, help="ignore points before this time (warm-up)")
+ap.add_argument("--only", default="", help="comma separated clip numbers (for a quick test)")
 a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 info = swing.probe(a.video)
 env_path = os.path.join(a.outdir, "env.npy")
@@ -20,6 +21,7 @@ if not os.path.exists(env_path): np.save(env_path, swing.audio_envelope(a.video,
 env = np.load(env_path)
 r = tennis.analyze(env, info["duration"], tennis.TennisSettings())
 segs = [(i, s, e) for i, (s, e) in enumerate(r["segments"]) if s >= a.start]
+if a.only: segs = [segs[int(k)] for k in a.only.split(",")]
 match = {"segments": [[s, e] for _, s, e in segs], "labels": [r["labels"][i] for i, _, _ in segs],
          "clips": [{"clip": i, "start": s, "end": e, "ball": [], "bounces": []} for i, s, e in segs]}
 mj = os.path.join(a.outdir, "match.json"); json.dump(match, open(mj, "w"))

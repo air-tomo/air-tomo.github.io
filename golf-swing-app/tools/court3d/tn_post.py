@@ -59,13 +59,29 @@ for arg in sys.argv[5:]:
     k, path = arg.split(":"); k = int(k); c = M["clips"][k]
     P = clean(json.load(open(path)))
     bs = find_bounces(P)
-    serve = None
+    serve = None; b0 = None
     hits = [h for h in loud_hits if c["start"] <= h <= c["end"]]
     if hits and bs:
         h0 = hits[0]; b0 = next((b for b in bs if 0.3 < b["t"] - h0 < 1.2 and b["court"][1] > 11.9), None)
         if b0:
             serve = serve_speed(P, b0, h0)
             if serve: serve.update(t=round(h0, 3), bounce=b0["court"])
+    # in / out (rough): serve -> service box, otherwise the singles court. Near the line it is "close"
+    # (the far side is only accurate to about +-0.8 m with a camera this low)
+    for i, bb in enumerate(bs):
+        x, y = bb["court"]
+        if serve and abs(bb["t"] - (b0["t"] if b0 else -1)) < 1e-6:
+            box = (-4.115, 0.0) if x < 0 else (0.0, 4.115)   # serves into the wrong box are rare: judge the box it landed in
+            rect = (box[0], box[1], 11.885, 18.285); kind = "serve"
+        elif i == 0 and y < 11.885 and not any(h < bb["t"] for h in hits):
+            box = (-4.115, 0.0) if x < 0 else (0.0, 4.115)
+            rect = (box[0], box[1], 5.485, 11.885); kind = "serve"
+        else:
+            rect = (-4.115, 4.115, 0.0, 23.77); kind = "rally"
+        inside = min(x - rect[0], rect[1] - x, y - rect[2], rect[3] - y)
+        margin = 0.15 if y < 11.885 else 0.8
+        bb["kind"] = kind
+        bb["call"] = "IN" if inside > margin else "OUT" if inside < -margin else "CLOSE"
     res[k] = {"ball": P, "bounces": bs, "serve": serve}
-    print(k, "points", len(P), "bounces", [(b["t"], b["court"]) for b in bs], "serve", serve)
+    print(k, "points", len(P), "bounces", [(b["t"], b["court"], b["call"]) for b in bs], "serve", serve)
 json.dump(res, open(OUT, "w"))

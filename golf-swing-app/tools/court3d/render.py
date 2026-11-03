@@ -21,6 +21,8 @@ def mp(x, y):  # x lateral, y depth (0 = near baseline at bottom)
 COURT = [((-5.485, 0), (5.485, 0)), ((-5.485, 23.77), (5.485, 23.77)), ((-5.485, 0), (-5.485, 23.77)), ((5.485, 0), (5.485, 23.77)),
          ((-4.115, 0), (-4.115, 23.77)), ((4.115, 0), (4.115, 23.77)), ((-4.115, 5.485), (4.115, 5.485)),
          ((-4.115, 18.285), (4.115, 18.285)), ((0, 5.485), (0, 18.285))]
+CALL_COL = {"IN": (60, 220, 90), "OUT": (255, 60, 60), "CLOSE": (255, 200, 0)}
+CALL_TXT = {"IN": "IN", "OUT": "OUT", "CLOSE": "微妙"}
 def fmt(t): return "%d:%02d" % (int(t) // 60, int(t) % 60)
 def draw_frame(img, t, clip, k):
     pil = Image.fromarray(img); d = ImageDraw.Draw(pil, "RGBA")
@@ -34,7 +36,11 @@ def draw_frame(img, t, clip, k):
         dt = t - b["t"]
         if 0 <= dt < 1.5:
             x, y = (b["uv"][0] - CX) * SC, (b["uv"][1] - CY) * SC; r = 10 + 20 * dt
-            d.ellipse([x - r, y - r * 0.45, x + r, y + r * 0.45], outline=(255, 60, 60, int(255 * (1 - dt / 1.5))), width=3)
+            col = CALL_COL.get(b.get("call"), (255, 60, 60))
+            al = int(255 * (1 - dt / 1.5))
+            d.ellipse([x - r, y - r * 0.45, x + r, y + r * 0.45], outline=col + (al,), width=3)
+            if b.get("call"):
+                d.text((x + 14, y - 30), CALL_TXT[b["call"]], font=f_big, fill=col + (al,), stroke_width=2, stroke_fill=(0, 0, 0, al))
     # map
     d.rounded_rectangle([MX - 5, MY - 5, W - 10, MY + 330], 10, fill=(0, 0, 0, 140))
     d.rectangle([mp(-5.485, 23.77), mp(5.485, 0)], fill=(60, 80, 170, 200))
@@ -44,7 +50,8 @@ def draw_frame(img, t, clip, k):
         if b["t"] > t: continue
         x, y = mp(*b["court"]); recent = t - b["t"] < 1.5
         r = 6 if recent else 4
-        d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 60, 60, 255) if recent else (255, 200, 0, 220), outline=(0, 0, 0, 255))
+        col = CALL_COL.get(b.get("call"), (255, 60, 60))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=col + (255 if recent else 170,), outline=(0, 0, 0, 255))
     d.text((MX, MY + 310), "奥側は ±1m 程度", font=f_small, fill=(220, 220, 220, 255))
     sv = clip.get("serve")
     if sv and t >= sv["t"] and sv["rms_px"] < 3 and 60 < sv["kmh"] < 190:

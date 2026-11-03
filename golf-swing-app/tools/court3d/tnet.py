@@ -24,8 +24,9 @@ def load(path):
     sd = torch.load(path, map_location="cpu", weights_only=True)
     m.load_state_dict(sd); m.eval(); return m
 def heat_to_xy(hm):
-    """hm: (256, 360, 640) logits -> argmax class map -> centre of the >=128 blob nearest the peak (or None)."""
-    cls = hm.argmax(0).astype(np.uint8)
+    """hm: (256, 360, 640) logits or the (360, 640) argmax class map -> argmax class map -> centre of the >=128 blob nearest the peak (or None)."""
+    cls = hm if hm.ndim == 2 else hm.argmax(0)
+    cls = cls.astype(np.uint8)
     _, b = cv2.threshold(cls, 127, 255, cv2.THRESH_BINARY)
     n, lab, st, cen = cv2.connectedComponentsWithStats(b, 8)
     if n <= 1: return None
