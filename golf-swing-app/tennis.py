@@ -3,7 +3,10 @@
 ポイントはサーブから始まる。打球音を検出し、次の順で1ポイントを組み立てる。
 1. 間隔の短い打球を1つのラリーとしてまとめる（ラリー中の打球間隔は 1〜3 秒、ポイント間は 20〜25 秒）
 2. サーブ前のボールつき（1 秒未満のリズムで続く、サーブより小さい音）を除き、最初の打球をサーブとする
-3. フォルト（サーブ1打だけ）のすぐ後にセカンドサーブが続く場合は、同じポイントとしてまとめる
+3. フォルト（サーブ1打だけ）のすぐ後にセカンドサーブが続く場合は、同じポイントとしてまとめる。
+   1st と 2nd は同じ選手が同じ場所から打つので音の大きさがほぼ同じ（実測で -1〜+2dB）。
+   セカンドサーブより明らかに小さい音（サーブ前のボールつき、隣のコートの打球、実測で 3〜9dB 小さい）は
+   フォルトではないので取り除く
 4. 各サーブのトス（約 1.5 秒前）から、最後の打球の少し後までを残す。フォルトとセカンドサーブの間の待ち時間は除く
 """
 
@@ -18,6 +21,10 @@ QUIET_HIT_DB = 12.0  # ラリーの典型的な打球より、これ以上小さ
 BOUNCE_GAP_SEC = 1.0  # サーブ前のボールつきの間隔（ラリーの打球間隔より短い）
 BOUNCE_QUIETER_DB = 3.0  # ボールつきはサーブよりこれ以上小さい
 MAX_FAULT_HITS = 2  # フォルトの打球数（サーブ＋相手が打ち返した1打まで）
+# フォルトとみなす音の大きさの差（1st − 2nd、元の音量 dB）。実際の試合動画で、本当のフォルトは -1.0〜+2.3dB、
+# サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
+FAULT_QUIETER_DB = 3.0  # 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
+FAULT_LOUDER_DB = 4.0  # 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）
 
 
 @dataclass
@@ -25,7 +32,7 @@ class TennisSettings:
     pre_sec: float = 1.5  # サーブの何秒前から残すか（トスからサーブを打つまで）
     post_sec: float = 2.0  # 最後の打球の何秒後まで残すか（ボールの行方・リアクション）
     sensitivity: int = 6  # 1(鈍い)〜10(敏感)。遠い側の選手の打球も拾うため、ゴルフより少し高め
-    max_shot_gap_sec: float = 4.0  # 打球の間隔がこれ以下なら同じラリー（ロブを考えて長め）
+    max_shot_gap_sec: float = 5.0  # 打球の間隔がこれ以下なら同じラリー（ロブや、奥の選手の小さな打球を拾えなかった場合を考えて長め）
     min_hits: int = 2  # ラリーとみなす最少の打球数（サーブ＋リターン）
     keep_serve_only: bool = True  # サーブだけで終わったポイント（エースなど）も残す
     second_serve_gap_sec: float = 12.0  # フォルトからセカンドサーブまでの最大間隔（ポイント間より短い）
@@ -33,8 +40,8 @@ class TennisSettings:
 
 
 def _trim_quiet(g):
-    """ラリーの前後にある小さな音を取り除く。g は (時刻, 強さ) のリスト。"""
-    ref = np.percentile([st for _, st in g], 75)
+    """ラリーの前後にある小さな音を取り除く。g は (時刻, 強さ, 音量) のリスト。"""
+    ref = np.percentile([h[1] for h in g], 75)
     while len(g) > 1 and g[0][1] < ref - QUIET_HIT_DB:
         g = g[1:]
     while len(g) > 1 and g[-1][1] < ref - QUIET_HIT_DB:
@@ -53,7 +60,7 @@ def _split_at_serves(g):
         j = i
         while j + 1 < len(g) and g[j + 1][0] - g[j][0] < BOUNCE_GAP_SEC:
             j += 1
-        if j > i and j + 1 < len(g) and max(st for _, st in g[i:j + 1]) < g[j + 1][1] - BOUNCE_QUIETER_DB:
+        if j > i and j + 1 < len(g) and max(h[1] for h in g[i:j + 1]) < g[j + 1][1] - BOUNCE_QUIETER_DB:
             if i > start:
                 out.append(g[start:i])
             start = i = j + 1
@@ -63,18 +70,20 @@ def _split_at_serves(g):
     return [part for part in out if part]
 
 
-def find_points(times, strengths, settings):
-    """打球からポイントを組み立てる。
+def find_points(times, strengths, settings, levels=None):
+    """打球からポイントを組み立てる。levels は各打球の元の音量 (dB)。強さ (strengths) は背景からの差。
 
     各ポイントは {start, end, hits, parts}。parts はサーブごとの区間
     （フォルトがあれば [1stサーブ, セカンドサーブ〜]）で、各要素は {start, end, hits, fault}。
     """
     groups = []
-    for t, st in zip(times, strengths):
+    if levels is None:
+        levels = strengths
+    for t, st, lv in zip(times, strengths, levels):
         if groups and t - groups[-1][-1][0] <= settings.max_shot_gap_sec:
-            groups[-1].append((t, st))
+            groups[-1].append((t, st, lv))
         else:
-            groups.append([(t, st)])
+            groups.append([(t, st, lv)])
     groups = [_trim_quiet(part) for g in groups for part in _split_at_serves(g)]
 
     multi = [g for g in groups if len(g) >= max(2, settings.min_hits)]
@@ -91,8 +100,14 @@ def find_points(times, strengths, settings):
         g = groups[i]
         part = {"start": g[0][0], "end": g[-1][0], "hits": len(g), "fault": False}
         nxt = groups[i + 1] if i + 1 < len(groups) else None
-        if (nxt is not None and len(g) <= MAX_FAULT_HITS and is_serve(g)
-                and nxt[0][0] - g[-1][0] <= settings.second_serve_gap_sec):
+        before_serve = (nxt is not None and len(g) <= MAX_FAULT_HITS
+                        and nxt[0][0] - g[-1][0] <= settings.second_serve_gap_sec)
+        diff = g[0][2] - nxt[0][2] if before_serve else 0.0
+        if before_serve and diff < -FAULT_QUIETER_DB:
+            # サーブの直前の小さな音（ボールつき・隣のコートの打球）。ポイントには入れない
+            i += 1
+            continue
+        if before_serve and is_serve(g) and diff <= FAULT_LOUDER_DB:
             # フォルト → セカンドサーブ（同じポイント）
             part["fault"] = True
             second = {"start": nxt[0][0], "end": nxt[-1][0], "hits": len(nxt), "fault": False}
@@ -143,6 +158,8 @@ def build_segments(points, duration, settings):
 def analyze(env, duration, settings):
     """音量の包絡線から、ポイントと切り出し区間を求める。"""
     times, strengths = swing.detect_hits(env, settings.sensitivity, HIT_MIN_GAP_SEC)
-    points = find_points(times, strengths, settings)
+    # 打球の時刻から包絡線のフレームに戻して、元の音量を読む
+    levels = [float(env[min(len(env) - 1, int(round(t / swing.HOP_SEC - 0.5)))]) for t in times]
+    points = find_points(times, strengths, settings, levels)
     segments, labels = build_segments(points, duration, settings)
     return {"hits": times, "rallies": points, "segments": segments, "labels": labels}

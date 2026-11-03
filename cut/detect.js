@@ -141,11 +141,12 @@
   // ポイントはサーブから始まる（golf-swing-app/tennis.py と同じ組み立て方）
   // 1. 間隔の短い打球を1つのラリーにまとめる（ラリー中は 1〜3 秒、ポイント間は 20〜25 秒）
   // 2. サーブ前のボールつき（1 秒未満のリズムで続く、サーブより小さい音）を除き、最初の打球をサーブとする
-  // 3. フォルト（サーブ1打だけ）のすぐ後にセカンドサーブが続けば同じポイント
+  // 3. フォルト（サーブ1打だけ）のすぐ後にセカンドサーブが続けば同じポイント。1st と 2nd は同じ選手が同じ場所から
+  //    打つので音の大きさがほぼ同じ。セカンドサーブより明らかに小さい音（ボールつき・隣のコートの打球）はフォルトではない
   // 4. 各サーブのトス（約 1.5 秒前）から最後の打球の少し後までを残す
 
   const TENNIS = {
-    preSec: 1.5, postSec: 2, sensitivity: 6, maxShotGapSec: 4, minHits: 2, keepServeOnly: true,
+    preSec: 1.5, postSec: 2, sensitivity: 6, maxShotGapSec: 5, minHits: 2, keepServeOnly: true,
     secondServeGapSec: 12, mergeGapSec: 3,
   };
   const HIT_MIN_GAP_SEC = 0.3; // これより近い打球音は同じ1打（反響など）
@@ -153,6 +154,10 @@
   const BOUNCE_GAP_SEC = 1.0; // サーブ前のボールつきの間隔
   const BOUNCE_QUIETER_DB = 3; // ボールつきはサーブよりこれ以上小さい
   const MAX_FAULT_HITS = 2; // フォルトの打球数（サーブ＋相手が打ち返した1打まで）
+  // フォルトとみなす音の大きさの差（1st − 2nd、元の音量 dB）。実際の試合動画で、本当のフォルトは -1.0〜+2.3dB、
+  // サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
+  const FAULT_QUIETER_DB = 3.0; // 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
+  const FAULT_LOUDER_DB = 4.0; // 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）
 
   function trimQuiet(g) {
     const ref = percentile(g.map(function (h) { return h.s; }), 75);
@@ -181,12 +186,14 @@
     return out.filter(function (x) { return x.length; });
   }
 
-  function findPoints(times, strengths, st) {
+  /* levels は各打球の元の音量 (dB)、strengths は背景からの差 */
+  function findPoints(times, strengths, st, levels) {
+    levels = levels || strengths;
     let groups = [];
     times.forEach(function (t, i) {
-      const g = groups[groups.length - 1];
-      if (g && t - g[g.length - 1].t <= st.maxShotGapSec) g.push({ t: t, s: strengths[i] });
-      else groups.push([{ t: t, s: strengths[i] }]);
+      const g = groups[groups.length - 1], h = { t: t, s: strengths[i], lv: levels[i] };
+      if (g && t - g[g.length - 1].t <= st.maxShotGapSec) g.push(h);
+      else groups.push([h]);
     });
     groups = [].concat.apply([], groups.map(splitAtServes)).map(trimQuiet);
 
@@ -199,7 +206,11 @@
     const points = [];
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i], next = groups[i + 1];
-      if (next && g.length <= MAX_FAULT_HITS && isServe(g) && next[0].t - g[g.length - 1].t <= st.secondServeGapSec) {
+      const beforeServe = next && g.length <= MAX_FAULT_HITS && next[0].t - g[g.length - 1].t <= st.secondServeGapSec;
+      const diff = beforeServe ? g[0].lv - next[0].lv : 0;
+      // サーブの直前の小さな音（ボールつき・隣のコートの打球）。ポイントには入れない
+      if (beforeServe && diff < -FAULT_QUIETER_DB) continue;
+      if (beforeServe && isServe(g) && diff <= FAULT_LOUDER_DB) {
         const first = part(g, true), second = part(next, false);
         points.push({ start: first.start, end: second.end, hits: first.hits + second.hits, parts: [first, second] });
         i++;
@@ -215,7 +226,11 @@
 
   function tennisClips(prep, st) {
     const hits = detectHits(prep, st.sensitivity, HIT_MIN_GAP_SEC);
-    const points = findPoints(hits.times, hits.strengths, st);
+    // 打球の時刻から包絡線のフレームに戻して、元の音量を読む
+    const levels = hits.times.map(function (t) {
+      return prep.env[Math.min(prep.env.length - 1, Math.round(t / HOP_SEC - 0.5))];
+    });
+    const points = findPoints(hits.times, hits.strengths, st, levels);
     const clips = [];
     points.forEach(function (p, pi) {
       p.parts.forEach(function (part, ki) {
