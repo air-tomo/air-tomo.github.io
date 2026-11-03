@@ -359,6 +359,21 @@
     trim.appendChild(nudge('−' + NUDGE, 'end', -NUDGE));
     trim.appendChild(nudge('+' + NUDGE, 'end', NUDGE));
 
+    // 試合前の練習（サーブ練習など）をまとめて外す
+    if (i > 0) {
+      const before = document.createElement('button');
+      before.type = 'button';
+      before.className = 'before';
+      before.textContent = 'これより前をすべて外す';
+      before.addEventListener('click', function () {
+        state.clips.forEach(function (x, k) { if (k < i) x.on = false; });
+        renderClips();
+        const el = $('clip' + i);
+        if (el) el.scrollIntoView({ block: 'center' });
+      });
+      trim.appendChild(before);
+    }
+
     li.appendChild(top);
     li.appendChild(trim);
     return li;
