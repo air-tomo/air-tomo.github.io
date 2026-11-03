@@ -80,7 +80,9 @@
     <h2>3. 結果</h2>
     <p id="summary"></p>
     <div class="stage" id="playStage"><video id="player" playsinline preload="auto"></video><canvas class="overlay" id="playOverlay"></canvas></div>
-    <div class="row" style="margin-top:10px"><button class="secondary" id="playAllBtn">続けて再生</button><button class="secondary" id="stopBtn">止める</button></div>
+    <div class="row" style="margin-top:10px"><button class="secondary" id="playAllBtn">続けて再生</button><button class="secondary" id="stopBtn">止める</button><button class="secondary" id="exportBtn">ポイントだけの動画を書き出す</button></div>
+    <div id="exportBox" hidden style="margin-top:10px"><div class="bar"><div id="exportBar"></div></div><p id="exportText"></p>
+      <div class="row"><button class="secondary" id="shareBtn" hidden>写真に保存・共有</button><a class="secondary" id="downloadLink" hidden style="line-height:40px;text-decoration:none">ダウンロード</a></div></div>
     <ul class="points" id="points"></ul>
   </section>
 </main>

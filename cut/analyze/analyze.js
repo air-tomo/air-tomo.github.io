@@ -304,3 +304,36 @@ function drawOverlay() {
   }
 }
 requestAnimationFrame(drawOverlay);
+
+// ---- ポイントだけの動画を書き出す（再エンコードしない。../worker.js と同じ仕組み） ----
+
+$('exportBtn').addEventListener('click', async () => {
+  const segments = [];
+  state.points.forEach((p) => p.parts.forEach((q) => segments.push([q.start, q.end])));
+  if (!segments.length) return;
+  $('exportBox').hidden = false; $('exportBtn').disabled = true; keepAwake();
+  const base = state.file.name.replace(/\.[^.]+$/, ''), ftyp = state.info.ftyp;
+  const qt = !ftyp || String.fromCharCode(ftyp[8], ftyp[9], ftyp[10], ftyp[11]) === 'qt  ';
+  const name = base + '_points' + (qt ? '.mov' : '.mp4'), type = qt ? 'video/quicktime' : 'video/mp4';
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const w = new Worker('../worker.js');
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === 'progress') { $('exportBar').style.width = Math.round(m.progress * 100) + '%'; $('exportText').textContent = '書き出しています'; }
+        else if (m.type === 'done') { w.terminate(); resolve(m); }
+        else if (m.type === 'no-storage') { w.terminate(); reject(new Error('この画面（プライベートブラウズなど）では書き出せません')); }
+        else if (m.type === 'error') { w.terminate(); reject(new Error(m.message)); }
+      };
+      w.onerror = (e) => { w.terminate(); reject(new Error(e.message || '書き出しに失敗しました')); };
+      w.postMessage({ file: state.file, segments: segments, name: name });
+    });
+    const file = new File([result.file], name, { type: type });
+    const url = URL.createObjectURL(file);
+    $('exportText').textContent = '完成: ' + fmt(result.stats.duration) + '・' + (file.size / 1e6).toFixed(0) + 'MB';
+    $('downloadLink').href = url; $('downloadLink').download = name; $('downloadLink').hidden = false;
+    $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+    $('shareBtn').onclick = async () => { try { await navigator.share({ files: [file] }); } catch (e) { /* キャンセル */ } };
+  } catch (e) { $('exportText').textContent = e.message || String(e); }
+  $('exportBtn').disabled = false;
+});
