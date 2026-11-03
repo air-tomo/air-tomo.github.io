@@ -129,17 +129,18 @@
       }
     });
     const out = await det.session.run({ frames: new det.ort.Tensor('float32', inp, [1, 9, h, w]) });
-    const heat = out.heat.data;  // uint8 class map (h*w)
-    // 128 以上の画素の一番大きな塊の重心
+    // TrackNet: 0-255 のクラス番号（128 以上がボール）。軽量モデル（train_small.py）: 0-1 の確率（0.5 以上）
+    const heat = out.heat.data, thr = heat instanceof Float32Array ? 0.5 : 128;
+    // しきい値以上の画素の一番大きな塊の重心
     const seen = new Uint8Array(w * h); let best = null;
     for (let i = 0; i < w * h; i++) {
-      if (heat[i] < 128 || seen[i]) continue;
+      if (heat[i] < thr || seen[i]) continue;
       const stack = [i]; seen[i] = 1; let n = 0, sx = 0, sy = 0;
       while (stack.length) {
         const j = stack.pop(), x = j % w, y = (j - x) / w; n++; sx += x; sy += y;
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
           const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-          const k = yy * w + xx; if (!seen[k] && heat[k] >= 128) { seen[k] = 1; stack.push(k); }
+          const k = yy * w + xx; if (!seen[k] && heat[k] >= thr) { seen[k] = 1; stack.push(k); }
         }
       }
       if (!best || n > best.n) best = { n: n, x: sx / n, y: sy / n };
