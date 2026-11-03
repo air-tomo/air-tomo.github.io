@@ -377,8 +377,13 @@
     });
     const groups = [];
     for (let i = 0; i < all.length; i++) {
-      const a = all[i], parts = [a], gapNext = i + 1 < all.length ? all[i + 1].t - a.t : 1e9;
-      if ((!a.returned && gapNext < 25) || gapNext < 15) {     // 返球されずに、またサーブを打った: フォルト
+      const a = all[i], parts = [a], nx = all[i + 1] || null, gapNext = nx ? nx.t - a.t : 1e9;
+      // サーバーが立っていた側: サーブはクロスに打つので、入ったボックスの反対側
+      const half = function (s) { return s.bounce && Math.abs(s.bounce.court[0]) > 0.5 ? -Math.sign(s.bounce.court[0]) : 0; };
+      let fault;
+      if (nx && nx.side === a.side && gapNext < 30 && half(a) && half(nx)) fault = half(a) === half(nx);   // セカンドサーブは同じ側から、次のポイントは反対側から
+      else fault = (!a.returned && gapNext < 25) || gapNext < 15;   // 返球されずに、またサーブを打った
+      if (fault) {     // フォルト
         a.fault = true; if (a.bounce) a.bounce.call = 'OUT';
         parts.push(all[i + 1]); i++;
       }

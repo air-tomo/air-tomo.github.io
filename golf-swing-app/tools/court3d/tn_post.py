@@ -190,9 +190,17 @@ for a_ in ALL_ATTEMPTS:
 ALL_ATTEMPTS = kept
 while i < len(ALL_ATTEMPTS):
     a_ = ALL_ATTEMPTS[i]; parts = [a_]
-    gap_next = ALL_ATTEMPTS[i + 1]["t"] - a_["t"] if i + 1 < len(ALL_ATTEMPTS) else 1e9
-    # not played back and served again within 25 s, or served again within 15 s (no time to play a point): a fault
-    if (not a_["returned"] and gap_next < 25) or gap_next < 15:
+    nx = ALL_ATTEMPTS[i + 1] if i + 1 < len(ALL_ATTEMPTS) else None
+    gap_next = nx["t"] - a_["t"] if nx else 1e9
+    # which half the server stood on: serves go cross-court, so the opposite of the box the serve landed in
+    half = lambda a: (-np.sign(a["bounce"]["court"][0]) if a["bounce"] is not None and abs(a["bounce"]["court"][0]) > 0.5 else 0)
+    same_server = nx is not None and nx["side"] == a_["side"] and gap_next < 30
+    if same_server and half(a_) and half(nx):
+        fault = half(a_) == half(nx)          # a second serve comes from the same half; the next point from the other half
+    else:
+        # not played back and served again within 25 s, or served again within 15 s (no time to play a point): a fault
+        fault = (not a_["returned"] and gap_next < 25) or gap_next < 15
+    if fault:
         a_["fault"] = True
         if a_["bounce"] is not None: a_["bounce"]["call"] = "OUT"      # they served again, so it was out
         parts.append(ALL_ATTEMPTS[i + 1]); i += 1
