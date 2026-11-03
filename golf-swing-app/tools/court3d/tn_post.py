@@ -50,8 +50,9 @@ def find_bounces(P):
         if out and t1 - out[-1]["t"] < 0.4: continue
         out.append({"t": round(t1, 3), "uv": [round(x1, 1), round(y1, 1)], "court": [round(float(g[0]), 2), round(float(g[1]), 2)]})
     return out
-def serve_speed(P, bounce, hit):
-    """3D flight from the hit (audio time, contact prior) to the observed bounce point on the ground."""
+def serve_speed(P, bounce, hit, server_y=-0.5):
+    """3D flight from the hit (audio time, contact prior) to the observed bounce point on the ground.
+    server_y: where the server stands (-0.5 = behind the near baseline, 24.3 = behind the far baseline)"""
     obs = [(tt, x, y) for tt, x, y in P if hit + 0.02 < tt < bounce["t"] - 0.01]
     if len(obs) < 5: return None
     ts = np.array([o[0] for o in obs]) - hit; uv = np.array([[o[1], o[2]] for o in obs])
@@ -59,8 +60,8 @@ def serve_speed(P, bounce, hit):
     def res(q):
         p0, v0 = q[:3], q[3:]
         Pp = simulate(p0, v0, np.append(ts, tb))
-        return np.concatenate([(proj(Pp[:-1]) - uv).ravel(), (Pp[-1] - gb) * 40, [(p0[1] + 0.5) / 0.6 * 3, (p0[2] - 2.6) / 0.3 * 3]])
-    q0 = np.array([0, -0.5, 2.6, (gb[0]) / tb, (gb[1] + 0.5) / tb, -1.0])
+        return np.concatenate([(proj(Pp[:-1]) - uv).ravel(), (Pp[-1] - gb) * 40, [(p0[1] - server_y) / 0.6 * 3, (p0[2] - 2.6) / 0.3 * 3]])
+    q0 = np.array([0, server_y, 2.6, (gb[0]) / tb, (gb[1] - server_y) / tb, -1.0])
     s = least_squares(res, q0, loss="soft_l1", f_scale=2.0)
     rms = float(np.sqrt(np.mean(s.fun[:2 * len(obs)] ** 2)))
     # median per-frame error: a few frames on another ball (balls lying around) do not spoil it
@@ -163,13 +164,14 @@ for arg in sys.argv[5:]:
     for bb in bs:
         x, y = bb["court"]
         if not NEAR_BOX(x, y) or any(abs(a["t"] - (bb["t"] - 0.6)) < 1.2 for a in attempts): continue
-        if any(0.2 < h - bb["t"] < 1.0 for h in loud): attempts.append({"t": bb["t"] - 0.6, "side": "near"})
+        if any(0.2 < h - bb["t"] < 1.0 for h in loud): attempts.append({"t": bb["t"] - 0.6, "side": "near", "est": True})
     attempts.sort(key=lambda a: a["t"])
     # a serve comes after dead time: no shot by the near player and no bounce inside the court in the 4 s before
     # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
     def dead_before(h):
         if any(0.4 < h - x < 4.0 for x in loud): return False
-        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 22.3 for b in bs)
+        # bounces near a baseline are the server bouncing the ball (the far side reads 1-2 m short with a low camera)
+        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 20.0 for b in bs)
     attempts = [a_ for a_ in attempts if dead_before(a_["t"])]
     # --- each attempt: serve bounce, returned?, rally ---
     for i, a_ in enumerate(attempts):
@@ -235,8 +237,8 @@ for parts in points:
             r["bounces"].extend(bounces_r)
         rg = [round(max(c["start"], a_["t"] - 1.2), 3), round(min(c["end"], end), 3)]
         prange.append([a_["clip"]] + rg); r["ranges"].append(rg)
-        if a_["side"] == "far" and sb is not None and not a_.get("fault"):
-            sp = serve_speed(P, sb, a_["t"])
+        if sb is not None and not a_.get("fault") and not a_.get("est"):
+            sp = serve_speed(P, sb, a_["t"], -0.5 if a_["side"] == "far" else 24.3)
             if sp: sp.update(t=round(a_["t"], 3), bounce=sb["court"]); a_["speed"] = sp; r["serve"] = r["serve"] or sp
     pt = {"ranges": prange, "serves": [{"t": round(a_["t"], 3), "side": a_["side"], "fault": bool(a_.get("fault")), "speed": a_.get("speed")} for a_ in parts]}
     for a_ in parts: res[a_["clip"]]["points"].append(pt)
