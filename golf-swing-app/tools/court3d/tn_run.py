@@ -5,7 +5,8 @@ X0, Y0, CW, CH = 320, 120, 1280, 720
 dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 BATCH = 16 if dev != "cpu" else 1
 m = tnet.load(sys.argv[5] if len(sys.argv) > 5 else "model_best.pt").to(dev); torch.set_num_threads(4)
-cmd = ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t0:.3f}", "-i", video, "-t", f"{dur:.3f}", "-vf",
+hw = ["-hwaccel", "cuda"] if dev == "cuda" else []   # decode HEVC on the GPU too (Colab)
+cmd = ["ffmpeg", "-nostdin", "-v", "error"] + hw + ["-ss", f"{t0:.3f}", "-i", video, "-t", f"{dur:.3f}", "-vf",
        f"fps=30,crop={CW}:{CH}:{X0}:{Y0},scale=640:360", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
 p = subprocess.Popen(cmd, stdout=subprocess.PIPE); sz = 640 * 360 * 3
 frames = []
