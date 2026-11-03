@@ -92,6 +92,14 @@ for arg in sys.argv[5:]:
         margin = 0.15 if y < 11.885 else 0.8
         bb["kind"] = kind
         bb["call"] = "IN" if inside > margin else "OUT" if inside < -margin else "CLOSE"
-    res[k] = {"ball": P, "bounces": bs, "serve": serve}
+    # end of the point: an OUT, or a second bounce on the same side; only if the near player does not hit again afterwards
+    point_end = None
+    for i, bb in enumerate(bs):
+        side = bb["court"][1] > 11.885
+        dead = bb["call"] == "OUT" or (i > 0 and (bs[i - 1]["court"][1] > 11.885) == side and bb["t"] - bs[i - 1]["t"] < 3.0
+                                        and not any(bs[i - 1]["t"] < h < bb["t"] for h in hits))
+        if dead and not any(h > bb["t"] + 0.2 for h in hits):
+            point_end = round(bb["t"] + 1.5, 3); break
+    res[k] = {"ball": P, "bounces": bs, "serve": serve, "point_end": point_end}
     print(k, "points", len(P), "bounces", [(b["t"], b["court"], b["call"]) for b in bs], "serve", serve)
 json.dump(res, open(OUT, "w"))
