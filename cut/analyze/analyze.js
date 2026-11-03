@@ -221,7 +221,20 @@ function buildPoints() {
     return { parts: parts, start: parts[0].start, end: parts[parts.length - 1].end };
   });
   const total = state.points.reduce((s, p) => s + p.parts.reduce((a, q) => a + q.end - q.start, 0), 0);
-  $('summary').textContent = state.points.length + ' ポイント・合計 ' + fmt(total) + '（元の動画 ' + fmt(state.info.duration) + '）。▶ で再生すると、ボールの軌跡・バウンド・イン/アウトが重なって表示されます。';
+  // 試合のまとめ: サーバー（手前 / 奥）ごとの 1st サーブの確率・ダブルフォルト・速度
+  const st = { far: { n: 0, first: 0, df: 0, sp: [] }, near: { n: 0, first: 0, df: 0, sp: [] } };
+  m.points.forEach((pt) => {
+    const s0 = pt.serves[0], x = st[s0.side]; x.n++;
+    if (!s0.fault) x.first++;
+    if (pt.serves.length === 2 && pt.serves[1].fault) x.df++;
+    pt.serves.forEach((sv) => { if (sv.speed && sv.speed.rms_px < 3 && sv.speed.kmh > 60 && sv.speed.kmh < 190) x.sp.push(sv.speed.kmh); });
+  });
+  const line = (name, x) => x.n ? name + ' ' + x.n + ' ポイント・1st サーブ ' + Math.round(x.first / x.n * 100) + '%・ダブルフォルト ' + x.df +
+    (x.sp.length ? '・速度 平均 ' + Math.round(x.sp.reduce((a, b) => a + b, 0) / x.sp.length) + 'km/h（最高 ' + Math.max.apply(null, x.sp) + '）' : '') : '';
+  const calls = { IN: 0, OUT: 0, CLOSE: 0 }; m.clips.forEach((c) => c.bounces.forEach((b) => calls[b.call]++));
+  $('summary').textContent = state.points.length + ' ポイント・合計 ' + fmt(total) + '（元の動画 ' + fmt(state.info.duration) + '）。' +
+    [line('手前の選手のサーブ:', st.far), line('奥の選手のサーブ:', st.near)].filter((x) => x).join(' ／ ') +
+    '。バウンド IN ' + calls.IN + '・OUT ' + calls.OUT + '・微妙 ' + calls.CLOSE + '。▶ で再生すると、ボールの軌跡・バウンド・イン/アウトが重なって表示されます。';
   const ul = $('points'); ul.innerHTML = '';
   state.points.forEach((p, i) => {
     const li = document.createElement('li'); li.id = 'pt' + i;
