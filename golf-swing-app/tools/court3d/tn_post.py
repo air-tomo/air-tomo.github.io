@@ -65,41 +65,162 @@ def serve_speed(P, bounce, hit):
     rms = float(np.sqrt(np.mean(s.fun[:2 * len(obs)] ** 2)))
     return {"kmh": round(float(np.linalg.norm(s.x[3:])) * 3.6), "rms_px": round(rms, 2), "contact": [round(float(v), 2) for v in s.x[:3]]}
 M = json.load(open(MATCH)); res = {}
+ALL_HITS = sorted(times)                       # every racket/ball sound (quiet ones too)
+FAR_BOX = lambda x, y: 11.6 <= y <= 19.3 and abs(x) <= 4.7
+NEAR_BOX = lambda x, y: 4.9 <= y <= 12.2 and abs(x) <= 4.7
+def call(x, y, rect):
+    inside = min(x - rect[0], rect[1] - x, y - rect[2], rect[3] - y)
+    margin = 0.15 if y < 11.885 else 0.8      # the far side is only accurate to about +-0.8 m with a camera this low
+    return "IN" if inside > margin else "OUT" if inside < -margin else "CLOSE"
+def launch(P, bb, hits):
+    """time the ball left the racket before this bounce: the last hit sound 0.2-1.3 s before, else the start of the track"""
+    hs = [h for h in hits if 0.2 <= bb["t"] - h <= 1.3]
+    if hs: return hs[-1]
+    seq = [q[0] for q in P if q[0] <= bb["t"]]
+    t0 = bb["t"]
+    for q in reversed(seq):
+        if t0 - q > 0.2: break
+        t0 = q
+    return t0 if bb["t"] - t0 >= 0.2 else None
+def serve_at(P, bb, hits):
+    """a serve: lands in (or near) a service box, fast (average > 60 km/h from the server at the far/near baseline)"""
+    x, y = bb["court"]
+    far, near = FAR_BOX(x, y), NEAR_BOX(x, y)
+    if not (far or near): return None
+    tl = launch(P, bb, hits)
+    if tl is None: return None
+    sy = -0.5 if far else 24.3; sx = -np.sign(x) * 1.0       # the server stands near the centre mark, serving cross-court
+    v = np.hypot(x - sx, y - sy) / max(1e-3, bb["t"] - tl) * 3.6
+    return (tl, "far" if far else "near", v) if v >= 60 else None
+def ball_gap(P, t0, t1, gap=2.0):
+    """first time in (t0, t1) after which the ball is not seen for `gap` seconds, else None"""
+    ts = [q[0] for q in P if t0 <= q[0] <= t1]
+    ts = [t0] + ts + [t1]
+    for a, b in zip(ts, ts[1:]):
+        if b - a > gap: return a
+    return None
+def end_after(cur, hits):
+    """the last bounce, or a shot played off it (a hit within 1.5 s), plus 1.5 s"""
+    t_end = cur["bounces"][-1]["t"]
+    after = [h for h in hits if 0 < h - t_end < 1.5]
+    return round((after[-1] if after else t_end) + 1.5, 3)
+def ray_height(u, v, y_plane):
+    """height (m) of the point on the camera ray through pixel (u, v) where it crosses the plane y = y_plane"""
+    Rt = R.T; C = -Rt @ t
+    d = Rt @ np.linalg.inv(K) @ np.array([u, v, 1.0])
+    if abs(d[1]) < 1e-9: return None
+    s_ = (y_plane - C[1]) / d[1]
+    return float(C[2] + s_ * d[2]) if s_ > 0 else None
+def rally_until(P, bs, i0, t_from, hits, clip_end):
+    """bounces of the rally after bs[i0-1] up to the end of the point. Returns (list of bounces, end time)"""
+    out, last_t = [], t_from
+    for bb in bs[i0:]:
+        g = ball_gap(P, last_t, bb["t"])
+        if g is not None: return out, g + 1.0
+        x, y = bb["court"]
+        bb["kind"] = "rally"; bb["call"] = call(x, y, (-4.115, 4.115, 0, 23.77))
+        out.append(bb); last_t = bb["t"]
+        if bb["call"] == "OUT": return out, bb["t"] + 1.5
+    g = ball_gap(P, last_t, clip_end)
+    if g is not None: return out, g + 1.0
+    after = [h for h in hits if 0 < h - last_t < 1.5]
+    return out, min(clip_end, (after[-1] if after else last_t) + 1.5)
+def returned(t_bounce, hits):
+    """was the serve played back? In a rally the shots keep coming (return, next shot...): at least 2 hit sounds within 4.5 s
+    of the serve bounce. After a fault there is at most one (the receiver or the server knocking the ball away)."""
+    return sum(1 for h in hits if 0.1 < h - t_bounce < 4.5) >= 2
+CLIPS, ALL_ATTEMPTS = {}, []
 for arg in sys.argv[5:]:
     k, path = arg.split(":"); k = int(k); c = M["clips"][k]
     P = clean(json.load(open(path)))
     bs = find_bounces(P)
-    serve = None; b0 = None
-    hits = [h for h in loud_hits if c["start"] <= h <= c["end"]]
-    if hits and bs:
-        h0 = hits[0]; b0 = next((b for b in bs if 0.3 < b["t"] - h0 < 1.2 and b["court"][1] > 11.9), None)
-        if b0:
-            serve = serve_speed(P, b0, h0)
-            if serve: serve.update(t=round(h0, 3), bounce=b0["court"])
-    # in / out (rough): serve -> service box, otherwise the singles court. Near the line it is "close"
-    # (the far side is only accurate to about +-0.8 m with a camera this low)
-    for i, bb in enumerate(bs):
+    hits = [h for h in ALL_HITS if c["start"] - 0.5 <= h <= c["end"] and not any(abs(h - b["t"]) < 0.08 for b in bs)]
+    loud = [h for h in loud_hits if c["start"] - 0.5 <= h <= c["end"]]
+    # --- serve attempts ---
+    # near player: loud hit, then the ball starts high in the picture and comes down fast towards the far court
+    attempts = []
+    for h in loud:
+        seg = [q for q in P if 0.05 < q[0] - h < 0.5]
+        if len(seg) < 3 or seg[0][2] > 260 or seg[-1][2] < 400: continue
+        d = np.hypot(np.diff([q[1] for q in seg]), np.diff([q[2] for q in seg])) / np.diff([q[0] for q in seg]) / 30
+        if np.median(d) > 15: attempts.append({"t": h, "side": "far"})
+    # far player: lands in (or near) a near service box, fast, hit high (>= 1.8 m) at the far baseline
+    for bb in bs:
         x, y = bb["court"]
-        if serve and abs(bb["t"] - (b0["t"] if b0 else -1)) < 1e-6:
-            box = (-4.115, 0.0) if x < 0 else (0.0, 4.115)   # serves into the wrong box are rare: judge the box it landed in
-            rect = (box[0], box[1], 11.885, 18.285); kind = "serve"
-        elif i == 0 and y < 11.885 and not any(h < bb["t"] for h in hits):
+        if not NEAR_BOX(x, y): continue
+        sv = serve_at(P, bb, hits)
+        if not sv: continue
+        first = [q for q in P if 0 <= q[0] - sv[0] < 0.25]
+        z = ray_height(first[0][1], first[0][2], 23.8) if first else None
+        if z is None or z < 1.8: continue
+        if any(abs(a["t"] - sv[0]) < 1.0 for a in attempts): continue
+        attempts.append({"t": sv[0], "side": "near"})
+    attempts.sort(key=lambda a: a["t"])
+    # a serve comes after dead time: no shot by the near player and no bounce inside the court in the 4 s before
+    # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
+    def dead_before(h):
+        if any(0.4 < h - x < 4.0 for x in loud): return False
+        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 22.3 for b in bs)
+    attempts = [a_ for a_ in attempts if dead_before(a_["t"])]
+    # --- each attempt: serve bounce, returned?, rally ---
+    for i, a_ in enumerate(attempts):
+        nxt = attempts[i + 1]["t"] if i + 1 < len(attempts) else c["end"]
+        sb = next((b for b in bs if 0.25 < b["t"] - a_["t"] < 1.3), None)
+        if sb is not None and a_["side"] == "far" and not FAR_BOX(*sb["court"]) and sb["court"][1] > 11.885 and sb["court"][1] < 11.6:
+            sb = None
+        a_["bounce"] = sb
+        if sb is not None:
+            x, y = sb["court"]
             box = (-4.115, 0.0) if x < 0 else (0.0, 4.115)
-            rect = (box[0], box[1], 5.485, 11.885); kind = "serve"
+            rect = (box[0], box[1], 11.885, 18.285) if a_["side"] == "far" else (box[0], box[1], 5.485, 11.885)
+            sb["kind"] = "serve"
+            sb["call"] = "OUT" if (a_["side"] == "far" and y < 11.885) or (a_["side"] == "near" and y > 11.885) else call(x, y, rect)
+        a_["returned"] = returned(sb["t"] if sb is not None else a_["t"] + 0.6, hits)
+    for a_ in attempts: a_["clip"] = k
+    CLIPS[k] = {"P": P, "bs": bs, "hits": hits, "c": c}
+    ALL_ATTEMPTS.extend(attempts)
+# --- faults (over the whole match): a serve that is not played back and is followed by another serve within 25 s was a fault ---
+ALL_ATTEMPTS.sort(key=lambda a: a["t"])
+points, i = [], 0
+# a "serve" less than 15 s after a serve that was played back is a shot in that rally (an overhead or a high ball)
+kept = []
+for a_ in ALL_ATTEMPTS:
+    if kept and kept[-1]["returned"] and a_["t"] - kept[-1]["t"] < 15: continue
+    kept.append(a_)
+ALL_ATTEMPTS = kept
+while i < len(ALL_ATTEMPTS):
+    a_ = ALL_ATTEMPTS[i]; parts = [a_]
+    gap_next = ALL_ATTEMPTS[i + 1]["t"] - a_["t"] if i + 1 < len(ALL_ATTEMPTS) else 1e9
+    # not played back and served again within 25 s, or served again within 15 s (no time to play a point): a fault
+    if (not a_["returned"] and gap_next < 25) or gap_next < 15:
+        a_["fault"] = True
+        if a_["bounce"] is not None: a_["bounce"]["call"] = "OUT"      # they served again, so it was out
+        parts.append(ALL_ATTEMPTS[i + 1]); i += 1
+    last = parts[-1]
+    if len(parts) == 2 and not last["returned"] and last["bounce"] is not None and last["bounce"]["call"] != "IN":
+        last["fault"] = True; last["bounce"]["call"] = "OUT"             # double fault
+    points.append(parts); i += 1
+for k in CLIPS: res[k] = {"ball": CLIPS[k]["P"], "bounces": [], "serve": None, "ranges": [], "points": []}
+for parts in points:
+    prange = []
+    for a_ in parts:
+        cd = CLIPS[a_["clip"]]; P, bs, hits, c = cd["P"], cd["bs"], cd["hits"], cd["c"]; r = res[a_["clip"]]
+        sb = a_["bounce"]
+        if sb is not None: r["bounces"].append(sb)
+        if a_.get("fault") or not a_["returned"]:
+            end = (sb["t"] + 1.5) if sb is not None else a_["t"] + 2.5
         else:
-            rect = (-4.115, 4.115, 0.0, 23.77); kind = "rally"
-        inside = min(x - rect[0], rect[1] - x, y - rect[2], rect[3] - y)
-        margin = 0.15 if y < 11.885 else 0.8
-        bb["kind"] = kind
-        bb["call"] = "IN" if inside > margin else "OUT" if inside < -margin else "CLOSE"
-    # end of the point: an OUT, or a second bounce on the same side; only if the near player does not hit again afterwards
-    point_end = None
-    for i, bb in enumerate(bs):
-        side = bb["court"][1] > 11.885
-        dead = bb["call"] == "OUT" or (i > 0 and (bs[i - 1]["court"][1] > 11.885) == side and bb["t"] - bs[i - 1]["t"] < 3.0
-                                        and not any(bs[i - 1]["t"] < h < bb["t"] for h in hits))
-        if dead and not any(h > bb["t"] + 0.2 for h in hits):
-            point_end = round(bb["t"] + 1.5, 3); break
-    res[k] = {"ball": P, "bounces": bs, "serve": serve, "point_end": point_end}
-    print(k, "points", len(P), "bounces", [(b["t"], b["court"], b["call"]) for b in bs], "serve", serve)
+            i0 = bs.index(sb) + 1 if sb is not None else next((n for n, b in enumerate(bs) if b["t"] > a_["t"] + 0.3), len(bs))
+            nxt_t = next((b["t"] for b in ALL_ATTEMPTS if b["t"] > a_["t"]), c["end"])
+            bounces_r, end = rally_until(P, [b for b in bs if b["t"] < nxt_t], i0, sb["t"] if sb is not None else a_["t"], hits, c["end"])
+            r["bounces"].extend(bounces_r)
+        rg = [round(max(c["start"], a_["t"] - 1.2), 3), round(min(c["end"], end), 3)]
+        prange.append([a_["clip"]] + rg); r["ranges"].append(rg)
+        if a_["side"] == "far" and sb is not None and not a_.get("fault"):
+            sp = serve_speed(P, sb, a_["t"])
+            if sp: sp.update(t=round(a_["t"], 3), bounce=sb["court"]); a_["speed"] = sp; r["serve"] = r["serve"] or sp
+    pt = {"ranges": prange, "serves": [{"t": round(a_["t"], 3), "side": a_["side"], "fault": bool(a_.get("fault")), "speed": a_.get("speed")} for a_ in parts]}
+    for a_ in parts: res[a_["clip"]]["points"].append(pt)
+    print("point", [(s_["t"], s_["side"], "FAULT" if s_["fault"] else "") for s_ in pt["serves"]], [rg[1:] for rg in prange])
+for k in res: res[k]["bounces"].sort(key=lambda b: b["t"])
 json.dump(res, open(OUT, "w"))

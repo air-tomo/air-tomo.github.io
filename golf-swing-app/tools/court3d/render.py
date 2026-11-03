@@ -13,7 +13,7 @@ f_big, f_small = ImageFont.truetype(FONT, 26), ImageFont.truetype(FONT, 16)
 M = json.load(open(MATCH)); N = len(M["clips"])
 for k, v in TN.items():
     c = M["clips"][int(k)]; c["ball"] = v["ball"]; c["bounces"] = v["bounces"]; c["serve"] = v.get("serve")
-    if v.get("point_end"): c["end"] = min(c["end"], v["point_end"])   # the ball tells when the point is over
+    if "ranges" in v: c["ranges"] = v["ranges"]       # from the serve (toss) to the end of the point, decided from the ball
 # top-down map
 MX, MY, MS = W - 170, 60, 12.0   # left, top, px per metre
 def mp(x, y): return (MX + 75 + x * MS, MY + 300 - y * MS * 0.5 * 2 * 0.5 * 2 * 0.5 * 2 / 2)  # placeholder, replaced below
@@ -25,7 +25,7 @@ COURT = [((-5.485, 0), (5.485, 0)), ((-5.485, 23.77), (5.485, 23.77)), ((-5.485,
 CALL_COL = {"IN": (60, 220, 90), "OUT": (255, 60, 60), "CLOSE": (255, 200, 0)}
 CALL_TXT = {"IN": "IN", "OUT": "OUT", "CLOSE": "微妙"}
 def fmt(t): return "%d:%02d" % (int(t) // 60, int(t) % 60)
-def draw_frame(img, t, clip, k):
+def draw_frame(img, t, clip, k, title):
     pil = Image.fromarray(img); d = ImageDraw.Draw(pil, "RGBA")
     # ball trail (last 0.3 s)
     tr = [(bt, (x - CX) * SC, (y - CY) * SC) for bt, x, y in clip["ball"] if t - 0.3 < bt <= t + 1e-6]
@@ -60,29 +60,46 @@ def draw_frame(img, t, clip, k):
         d.text((24, 65), "サーブ %d km/h" % sv["kmh"], font=f_big, fill=(255, 255, 255, 255))
     # header
     d.rounded_rectangle([12, 12, 430, 52], 8, fill=(0, 0, 0, 150))
-    d.text((24, 17), "%s  (元 %s)" % (M["labels"][k].split("（元")[0], fmt(clip["start"] + 1.5)), font=f_big, fill=(255, 255, 255, 255))
+    d.text((24, 17), title, font=f_big, fill=(255, 255, 255, 255))
     return np.asarray(pil)
-def render(k):
-    clip = M["clips"][k]; a, b = clip["start"], clip["end"]
-    out = os.path.join(OUTDIR, "c%03d.mp4" % k)
+def render(job):
+    n, k, a, b, name = job
+    clip = M["clips"][k]; title = "%s  (元 %s)" % (name or "ポイント %d" % n, fmt(a))
+    out = os.path.join(OUTDIR, "c%03d.mp4" % n)
     dec = subprocess.Popen(["ffmpeg", "-nostdin", "-v", "error", "-ss", "%.3f" % a, "-i", VIDEO, "-t", "%.3f" % (b - a),
                             "-vf", "fps=%d,crop=%d:%d:%d:%d,scale=%d:%d,format=rgb24" % (FPS, CWID, CWID * 9 // 16, CX, CY, W, H), "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
     enc = subprocess.Popen(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (W, H), "-r", str(FPS), "-i", "-",
                             "-ss", "%.3f" % a, "-t", "%.3f" % (b - a), "-i", VIDEO, "-map", "0:v", "-map", "1:a:0",
                             "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-shortest", out],
                            stdin=subprocess.PIPE)
-    n = 0; sz = W * H * 3
+    i = 0; sz = W * H * 3
     while True:
         buf = dec.stdout.read(sz)
         if len(buf) < sz: break
         img = np.frombuffer(buf, np.uint8).reshape(H, W, 3)
-        enc.stdin.write(draw_frame(img, a + n / FPS, clip, k).tobytes()); n += 1
+        enc.stdin.write(draw_frame(img, a + i / FPS, clip, k, title).tobytes()); i += 1
     enc.stdin.close(); enc.wait(); dec.wait()
     return out
 if __name__ == "__main__":
     os.makedirs(OUTDIR, exist_ok=True)
     ks = list(range(N)) if len(sys.argv) < 6 else [int(x) for x in sys.argv[5].split(",")]
-    with Pool(4) as p: files = p.map(render, ks)
+    jobs = []
+    pts = {}
+    for k in ks:
+        for p in TN.get(str(k), {}).get("points", []): pts[p["serves"][0]["t"]] = p
+    if pts:   # one point = (1st serve fault +) serve + rally; the waiting time between the serves is left out
+        for n, key in enumerate(sorted(pts), 1):
+            p = pts[key]
+            for j, (k, a, b) in enumerate(p["ranges"]):
+                sv = p["serves"][j]
+                tag = "（1st フォルト）" if sv["fault"] and j == 0 and len(p["ranges"]) > 1 else "（ダブルフォルト）" if sv["fault"] else "（セカンド）" if j == 1 else ""
+                if b - a > 1.0: jobs.append((len(jobs) + 1, k, a, b, "ポイント %d%s" % (n, tag)))
+    else:
+        for k in ks:
+            c = M["clips"][k]
+            for a, b in c.get("ranges", [[c["start"], c["end"]]]):
+                if b - a > 1.0: jobs.append((len(jobs) + 1, k, a, b, None))
+    with Pool(4) as p: files = p.map(render, jobs)
     lst = os.path.join(OUTDIR, "list.txt")
     open(lst, "w").write("".join("file '%s'\n" % f for f in files))
     subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", "-movflags", "+faststart", FINAL], check=True)
