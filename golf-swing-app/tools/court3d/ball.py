@@ -10,7 +10,7 @@ def frames(path, t0, dur):
         b = p.stdout.read(sz)
         if len(b) < sz: break
         yield np.frombuffer(b, np.uint8).reshape(Y1 - Y0, W, 3)
-def candidates(prev, cur, nxt, thr=16):
+def candidates(prev, cur, nxt, thr=16, yellow_min=0.25):
     gp, gc, gn = (cv2.cvtColor(x, cv2.COLOR_BGR2GRAY) for x in (prev, cur, nxt))
     m = (np.minimum(cv2.absdiff(gc, gp), cv2.absdiff(gc, gn)) > thr).astype(np.uint8)
     n, lab, st, cen = cv2.connectedComponentsWithStats(m, 8)
@@ -28,7 +28,7 @@ def candidates(prev, cur, nxt, thr=16):
         if big[int(cy), int(cx)]: continue
         reg = lab[y:y + h, x:x + w] == i
         yf = float(yellow[y:y + h, x:x + w][reg].mean())
-        if yf < 0.25: continue
+        if yf < yellow_min: continue
         out.append((float(cx), float(cy) + Y0, int(area), round(yf, 2)))
     return out
 def detect(path, t0, dur):
