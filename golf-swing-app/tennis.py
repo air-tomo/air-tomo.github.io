@@ -25,6 +25,13 @@ MAX_FAULT_HITS = 2  # フォルトの打球数（サーブ＋相手が打ち返�
 # サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
 FAULT_QUIETER_DB = 3.0  # 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
 FAULT_LOUDER_DB = 4.0  # 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）
+# ポイントの合間にカメラの近くでボールを拾う音・足音・ボールつきが 1〜2 秒おきに続くと、前のラリーと次のサーブが
+# つながってしまう（実際の試合動画で、ポイント間が 12 秒しかない場面）。大きな打球（手前の選手の打球）が
+# これだけの間なく、小さな音だけが続いたあとの大きな打球は、新しいポイントのサーブ（またはリターン）とする
+LOUD_BELOW_TOP_DB = 6.0  # 大きな打球: 動画内の打球の上位 10% の音量から、これ以内
+SERVE_PAUSE_SEC = 9.0  # ラリー中、手前の選手は 2〜4 秒ごとに打つ（弱い打球が続いても 8 秒未満だった）
+PRE_SERVE_SEC = 1.6  # 新しいポイントの大きな打球の直前、これ以内の小さな音は奥の選手のサーブとして残す
+RALLY_TAIL_SEC = 2.5  # 最後の大きな打球のあと、これ以内の小さな音は前のポイントの続き（奥の選手の最後の打球）
 
 
 @dataclass
@@ -70,6 +77,23 @@ def _split_at_serves(g):
     return [part for part in out if part]
 
 
+def _split_at_pauses(g, loud):
+    """小さな音だけが SERVE_PAUSE_SEC 以上続いたあとの大きな打球で区切る。間の小さな音（ボール拾い・足音）は除く。"""
+    out, cur, last_loud = [], [], None
+    for h in g:
+        if h[2] >= loud:
+            since = h[0] - (last_loud if last_loud is not None else cur[0][0] if cur else h[0])
+            if cur and since >= SERVE_PAUSE_SEC:
+                tail = [x for x in cur if last_loud is not None and x[0] - last_loud <= RALLY_TAIL_SEC]
+                if tail:
+                    out.append(tail)
+                cur = [x for x in cur if h[0] - x[0] <= PRE_SERVE_SEC]
+            last_loud = h[0]
+        cur.append(h)
+    out.append(cur)
+    return [part for part in out if part]
+
+
 def find_points(times, strengths, settings, levels=None):
     """打球からポイントを組み立てる。levels は各打球の元の音量 (dB)。強さ (strengths) は背景からの差。
 
@@ -84,7 +108,8 @@ def find_points(times, strengths, settings, levels=None):
             groups[-1].append((t, st, lv))
         else:
             groups.append([(t, st, lv)])
-    groups = [_trim_quiet(part) for g in groups for part in _split_at_serves(g)]
+    loud = np.percentile(levels, 90) - LOUD_BELOW_TOP_DB if len(levels) else 0.0
+    groups = [_trim_quiet(part) for g in groups for p in _split_at_pauses(g, loud) for part in _split_at_serves(p)]
 
     multi = [g for g in groups if len(g) >= max(2, settings.min_hits)]
     # サーブだけの打球を物音と区別するため、他のラリーの1打目（サーブ）並みに大きい音かを見る。
@@ -103,7 +128,8 @@ def find_points(times, strengths, settings, levels=None):
         before_serve = (nxt is not None and len(g) <= MAX_FAULT_HITS
                         and nxt[0][0] - g[-1][0] <= settings.second_serve_gap_sec)
         diff = g[0][2] - nxt[0][2] if before_serve else 0.0
-        if before_serve and diff < -FAULT_QUIETER_DB:
+        loudest = max(h[2] for h in g)
+        if before_serve and loudest < loud and loudest - nxt[0][2] < -FAULT_QUIETER_DB:
             # サーブの直前の小さな音（ボールつき・隣のコートの打球）。ポイントには入れない
             i += 1
             continue
