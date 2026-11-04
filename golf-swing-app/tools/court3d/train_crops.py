@@ -79,9 +79,10 @@ while time.time() < end:
     lr = 2e-3 * max(0.05, 1 - (time.time() - (end - a.hours * 3600)) / (a.hours * 3600))
     for g in opt.param_groups: g["lr"] = lr
     l = loss_fn(m(x), t); opt.zero_grad(); l.backward(); opt.step(); step += 1; run = 0.98 * run + 0.02 * l.item()
-    if time.time() - t_last > 900 or time.time() >= end:
+    if time.time() - t_last > 600 or time.time() >= end:
         r = evaluate(m); t_last = time.time()
         print("step", step, "loss %.4f" % run, "lr %.5f" % lr, r, flush=True)
+        torch.save(m.state_dict(), a.out + "_last.pt")       # resume with --init OUT_last.pt after a restart
         if r["f1"] > best: best = r["f1"]; torch.save(m.state_dict(), a.out + ".pt")
 m.load_state_dict(torch.load(a.out + ".pt", map_location="cpu", weights_only=True)); m.eval()
 
