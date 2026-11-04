@@ -330,9 +330,30 @@
       .concat(bs.filter(function (b) { return b.t > last && b.t <= last + 3.0; }).map(function (b) { return b.t; }));
     return r3(Math.max.apply(null, [last].concat(far)) + 1.5);
   }
+  /*
+   * ラリーは左右交互: 手前の選手の打球のあと奥の選手が打ったら、そのボールは手前に来るはず。次に見えたのが奥の半面のバウンドなら、
+   * 打球は画面の外かネットへ行っていて、見えているのは別のボール（または越えなかった）: その打球でポイントは終わり。
+   * 返り値: [これより後のバウンドはポイントに入れない時刻, 終わりの時刻] または null
+   */
+  function ownSideCut(bs, tFrom, hits, near) {
+    const nev = near.filter(function (h) { return h > tFrom - 0.01; })
+      .concat(bs.filter(function (b) { return b.t > tFrom && b.court[1] < NET_Y; }).map(function (b) { return b.t; }))
+      .sort(function (a, b) { return a - b; });
+    for (const hf of hits) {
+      if (hf <= tFrom || near.some(function (n) { return Math.abs(hf - n) < 0.05; })) continue;
+      const before = nev.filter(function (n) { return n < hf; });
+      if (!before.length || hf - before[before.length - 1] < 0.8 || hf - before[before.length - 1] > 3.0) continue;
+      const nx = nev.find(function (n) { return n > hf; }), nxt = nx == null ? 1e9 : nx;
+      if (bs.some(function (b) { return b.t - hf >= 0.5 && b.t - hf <= 2.0 && b.t < nxt && b.court[1] > NET_Y && b.court[1] < 23.0; }))
+        return [hf + 0.3, r3(hf + 1.5)];
+    }
+    return null;
+  }
   function rallyUntil(P, bs, i0, tFrom, hits, clipEnd, near) {
     const out = []; let lastT = tFrom, act = tFrom;
-    const cut = near ? nearCut(bs, tFrom, hits, near, clipEnd) : clipEnd;
+    let cut = near ? nearCut(bs, tFrom, hits, near, clipEnd) : clipEnd, blim = 1e9;
+    const own = near ? ownSideCut(bs, tFrom, hits, near) : null;
+    if (own) { blim = own[0]; cut = Math.min(cut, own[1]); }
     let prev = i0 > 0 && Math.abs(bs[i0 - 1].t - tFrom) < 1e-6 ? bs[i0 - 1] : null;
     const quiet = function (t1) {
       const ev = [act].concat(hits.filter(function (h) { return h > act && h < t1; }), [t1]);
@@ -340,7 +361,7 @@
       return null;
     };
     for (const bb of bs.slice(i0)) {
-      if (bb.t > cut) return [out, cut];
+      if (bb.t > Math.min(cut, blim)) return [out, cut];
       const g = ballGap(P, lastT, bb.t);
       if (g != null) return [out, Math.min(cut, g + 1.0)];
       const q = quiet(bb.t);
