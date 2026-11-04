@@ -6,9 +6,9 @@
 const fs = require('fs'), path = require('path');
 const R = require(path.join(__dirname, '..', '..', '..', 'cut', 'rally.js'));
 const E = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'IMG_0131_expected.json')));
-const cam = R.camera(E.cam), loud = R.loudHitsOf(E.times, E.levels);
+const cam = R.camera(E.cam), loud = R.loudHitsOf(E.times, E.levels), near = R.loudHitsOf(E.times, E.levels, 10);
 const clips = E.clips.map((c) => ({ start: c.start, end: c.end, pts: JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'IMG_0131_tn', 'tn_' + String(c.k).padStart(3, '0') + '.json'))) }));
-const m = R.analyzeMatch(clips, E.times, loud, cam);
+const m = R.analyzeMatch(clips, E.times, loud, cam, near);
 let bad = 0;
 E.clips.forEach((c, i) => {
   const a = m.clips[i], e = E.expected[c.k];

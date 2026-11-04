@@ -19,6 +19,9 @@ env = np.load(ENV)
 times, _ = swing.detect_hits(env, 6, 0.3)
 lv = np.array([env[int(round(x / swing.HOP_SEC - 0.5))] for x in times]); loud = np.percentile(lv, 90) - 6
 loud_hits = [x for x, l in zip(times, lv) if l >= loud]
+# the near player's shots also when they come to the net (a bit quieter, so the ball must be seen around the sound);
+# used to tell whether the ball came back
+near_hits = [x for x, l in zip(times, lv) if l >= loud - 4]
 def clean(pts):
     """drop isolated jumps (> 80 px from both neighbours' interpolation)"""
     P = [(tt, x, y) for tt, x, y in pts if x is not None]
@@ -115,12 +118,27 @@ def ray_height(u, v, y_plane):
     if abs(d[1]) < 1e-9: return None
     s_ = (y_plane - C[1]) / d[1]
     return float(C[2] + s_ * d[2]) if s_ > 0 else None
-def rally_until(P, bs, i0, t_from, hits, clip_end):
+def near_cut(bs, t_from, hits, loud, clip_end):
+    """a rally goes back and forth: after the ball goes to the far side, it comes back within 4.5 s (a bounce on the near
+    side or a shot by the near player, louder than the far player's). If not, the far player's shot went out or into the net: the point ends 1.5 s
+    after the last thing on the far side (quiet sounds after that are footsteps or the next court)."""
+    near = sorted([h for h in loud if h > t_from] + [b["t"] for b in bs if b["t"] > t_from and b["court"][1] < 11.885])
+    last = t_from
+    for e in near + [clip_end + 10]:
+        if e > clip_end + 5 or e - last > 4.5: break
+        last = e
+    else:
+        return clip_end
+    if clip_end - last <= 4.5: return clip_end
+    far = [x for x in hits if last < x <= last + 3.0] + [b["t"] for b in bs if last < b["t"] <= last + 3.0]
+    return round(max([last] + far) + 1.5, 3)
+def rally_until(P, bs, i0, t_from, hits, clip_end, loud=None):
     """bounces of the rally after bs[i0-1] up to the end of the point. Returns (list of bounces, end time).
     The point is over when the ball goes out, bounces twice on one side (or rolls) with no shot in between, is not seen for 2 s,
     or nothing happens (no shot, no bounce) for 3.5 s (a lob takes 3 s): the ball flew out of the picture or into the net, and what the
     detector finds after that is another ball."""
     out, last_t = [], t_from
+    cut = near_cut(bs, t_from, hits, loud, clip_end) if loud is not None else clip_end
     prev = bs[i0 - 1] if i0 > 0 and abs(bs[i0 - 1]["t"] - t_from) < 1e-6 else None
     act = t_from
     def quiet(t1):
@@ -129,8 +147,9 @@ def rally_until(P, bs, i0, t_from, hits, clip_end):
             if b - a > 3.5: return a
         return None
     for bb in bs[i0:]:
+        if bb["t"] > cut: return out, cut
         g = ball_gap(P, last_t, bb["t"])
-        if g is not None: return out, g + 1.0
+        if g is not None: return out, min(cut, g + 1.0)
         q = quiet(bb["t"])
         if q is not None: return out, q + 1.5
         x, y = bb["court"]
@@ -141,11 +160,11 @@ def rally_until(P, bs, i0, t_from, hits, clip_end):
             return out, bb["t"] + 1.0
         prev = bb; act = bb["t"]
     g = ball_gap(P, last_t, clip_end)
-    if g is not None: return out, g + 1.0
+    if g is not None: return out, min(cut, g + 1.0)
     after = [h for h in hits if 0 < h - last_t < 1.5]
     end = (after[-1] if after else last_t) + 1.5
     q = quiet(clip_end)
-    return out, min(clip_end, end, q + 1.5 if q is not None else end)
+    return out, min(clip_end, cut, end, q + 1.5 if q is not None else end)
 def returned(t_bounce, hits):
     """was the serve played back? In a rally the shots keep coming (return, next shot...): at least 2 hit sounds within 4.5 s
     of the serve bounce. After a fault there is at most one (the receiver or the server knocking the ball away)."""
@@ -214,7 +233,8 @@ for arg in sys.argv[5:]:
             sb["call"] = "OUT" if (a_["side"] == "far" and y < 11.885) or (a_["side"] == "near" and y > 11.885) else call(x, y, rect)
         a_["returned"] = returned(sb["t"] if sb is not None else a_["t"] + 0.6, hits)
     for a_ in attempts: a_["clip"] = k
-    CLIPS[k] = {"P": P, "bs": bs, "hits": hits, "c": c}
+    CLIPS[k] = {"P": P, "bs": bs, "hits": hits, "near": [h for h in near_hits if c["start"] - 0.5 <= h <= c["end"] and
+                     (h in loud or sum(1 for q in P if abs(q[0] - h) <= 0.5) >= 10)], "c": c}
     ALL_ATTEMPTS.extend(attempts)
 # --- faults (over the whole match): a serve that is not played back and is followed by another serve within 25 s was a fault ---
 ALL_ATTEMPTS.sort(key=lambda a: a["t"])
@@ -259,7 +279,7 @@ for parts in points:
         else:
             i0 = bs.index(sb) + 1 if sb is not None else next((n for n, b in enumerate(bs) if b["t"] > a_["t"] + 0.3), len(bs))
             nxt_t = next((b["t"] for b in ALL_ATTEMPTS if b["t"] > a_["t"]), c["end"])
-            bounces_r, end = rally_until(P, [b for b in bs if b["t"] < nxt_t], i0, sb["t"] if sb is not None else a_["t"], hits, c["end"])
+            bounces_r, end = rally_until(P, [b for b in bs if b["t"] < nxt_t], i0, sb["t"] if sb is not None else a_["t"], hits, c["end"], cd["near"])
             r["bounces"].extend(bounces_r)
         rg = [round(max(c["start"], a_["t"] - 1.2), 3), round(min(c["end"], end), 3)]
         prange.append([a_["clip"]] + rg); r["ranges"].append(rg)
