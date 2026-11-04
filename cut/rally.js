@@ -35,7 +35,7 @@
     };
     const px = cam.K[0][0] / 1637, netTop = pr([0, NET_Y, 0.914])[1];
     return {
-      px: px, highRow: netTop - 186 * px, lowRow: netTop - 46 * px,
+      px: px, highRow: netTop - 186 * px, lowRow: netTop - 46 * px,   // highRow は analyzeClip（1 ポイント用）だけが使う
       ground: function (u, v) { return applyH(Hinv, u, v); },
       /* 画素 (u, v) を通る視線が奥行き y = yPlane の面と交わる点の高さ (m) */
       rayHeight: function (u, v, yPlane) {
@@ -412,12 +412,19 @@
     const attempts = [];
     C.forEach(function (cd, ci) {
       const P = cd.P, bs = cd.bs, hits = cd.hits, loud = cd.loud, list = [];
-      loud.forEach(function (h) {     // 手前の選手のサーブ
+      const dead = function (h) {     // サーブの前 4 秒は、手前の選手の打球もコート内のバウンドもない
+        if (loud.some(function (x) { return h - x > 0.4 && h - x < 4.0; })) return false;
+        // ベースライン付近のバウンドはサーバーのボールつき（カメラが低いと奥は 1〜2m 手前に出る）
+        return !bs.some(function (b) { return h - b.t > 0.3 && h - b.t < 4.0 && b.court[1] > 1.5 && b.court[1] < 20.0; });
+      };
+      hits.forEach(function (h) {     // 手前の選手のサーブ（音の大きさではなく、ボールの飛び方で決める）
         const seg = P.filter(function (q) { return q[0] - h > 0.05 && q[0] - h < 0.5; });
         if (seg.length < 3 || seg[seg.length - 1][2] < cam.lowRow) return;
         // 打った直後の高さ: 最初の数フレームは取れないことがあるので、落ちてくる線を h + 0.05 秒まで戻す
         const y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0]);
-        if (Math.min(seg[0][2], y0) > cam.highRow) return;
+        // 高さ: その画素を通る視線がコートに 1m 入った所で 1.58m 以上（IMG_0131 の 260 行目）。カメラの高さによらない
+        const z0 = cam.rayHeight(seg[0][1], Math.min(seg[0][2], y0), 1.0);
+        if (z0 == null || z0 < 1.58 || !dead(h)) return;
         const d = []; for (let i = 1; i < seg.length; i++) d.push(Math.hypot(seg[i][1] - seg[i - 1][1], seg[i][2] - seg[i - 1][2]) / (seg[i][0] - seg[i - 1][0]) / 30);
         if (median(d) > 15 * cam.px) list.push({ t: h, side: 'far' });
       });
@@ -443,11 +450,6 @@
         if (loud.some(function (h) { return h - bb.t > 0.2 && h - bb.t < 1.0; })) list.push({ t: bb.t - 0.6, side: 'near', est: true });
       });
       list.sort(function (a, b) { return a.t - b.t; });
-      const dead = function (h) {     // サーブの前 4 秒は、手前の選手の打球もコート内のバウンドもない
-        if (loud.some(function (x) { return h - x > 0.4 && h - x < 4.0; })) return false;
-        // ベースライン付近のバウンドはサーバーのボールつき（カメラが低いと奥は 1〜2m 手前に出る）
-        return !bs.some(function (b) { return h - b.t > 0.3 && h - b.t < 4.0 && b.court[1] > 1.5 && b.court[1] < 20.0; });
-      };
       list.filter(function (a) { return dead(a.t); }).forEach(function (a) {
         const sb = bs.find(function (b) { return b.t - a.t > 0.25 && b.t - a.t < 1.3; }) || null;
         a.bounce = sb; a.clip = ci;

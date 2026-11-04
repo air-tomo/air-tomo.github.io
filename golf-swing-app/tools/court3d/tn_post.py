@@ -11,8 +11,7 @@ def proj(X): X = np.atleast_2d(X); p = (K @ (R @ X.T + t[:, None])).T; return p[
 # pixel sizes scale with the focal length; rows are measured from the net top (tuned on IMG_0131: f 1637, net top at row 446)
 PX = K[0, 0] / 1637.0
 NET_TOP_ROW = float(proj([0, 11.885, 0.914])[0, 1])
-HIGH_ROW = NET_TOP_ROW - 186 * PX       # a near player's serve starts above this row
-LOW_ROW = NET_TOP_ROW - 46 * PX         # ... and comes down below this one within 0.5 s
+LOW_ROW = NET_TOP_ROW - 46 * PX         # a near player's serve comes down below this row within 0.5 s
 def simulate(p0, v0, ts, k=0.0204, g=9.81, dt=1 / 600):
     out = []; p = np.array(p0, float); v = np.array(v0, float); tc = 0.0
     for T in ts:
@@ -198,14 +197,22 @@ for arg in sys.argv[5:]:
     hits = [h for h in ALL_HITS if c["start"] - 0.5 <= h <= c["end"] and not any(abs(h - b["t"]) < 0.08 for b in bs)]
     loud = [h for h in loud_hits if c["start"] - 0.5 <= h <= c["end"]]
     # --- serve attempts ---
-    # near player: loud hit, then the ball starts high in the picture and comes down fast towards the far court
+    # a serve comes after dead time: no shot by the near player and no bounce inside the court in the 4 s before
+    # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
+    def dead_before(h):
+        if any(0.4 < h - x < 4.0 for x in loud): return False
+        # bounces near a baseline are the server bouncing the ball (the far side reads 1-2 m short with a low camera)
+        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 20.0 for b in bs)
+    # near player: a hit (loud or not: the ball's flight decides), then the ball starts high and comes down fast towards the far court
     attempts = []
-    for h in loud:
+    for h in hits:
         seg = [q for q in P if 0.05 < q[0] - h < 0.5]
         if len(seg) < 3 or seg[-1][2] < LOW_ROW: continue
         # height just after the contact: the first points can be missed, so carry the falling path back to h + 0.05
         y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0])
-        if min(seg[0][2], y0) > HIGH_ROW: continue
+        # high: the ray through that pixel is >= 1.58 m up 1 m into the court (row 260 on IMG_0131); works for any camera height
+        z0 = ray_height(seg[0][1], min(seg[0][2], y0), 1.0)
+        if z0 is None or z0 < 1.58 or not dead_before(h): continue
         d = np.hypot(np.diff([q[1] for q in seg]), np.diff([q[2] for q in seg])) / np.diff([q[0] for q in seg]) / 30
         if np.median(d) > 15 * PX: attempts.append({"t": h, "side": "far"})
     # far player: lands in (or near) a near service box, fast, hit high (>= 1.8 m) at the far baseline
@@ -232,12 +239,6 @@ for arg in sys.argv[5:]:
         if not NEAR_BOX(x, y) or any(abs(a["t"] - (bb["t"] - 0.6)) < 1.2 for a in attempts): continue
         if any(0.2 < h - bb["t"] < 1.0 for h in loud): attempts.append({"t": bb["t"] - 0.6, "side": "near", "est": True})
     attempts.sort(key=lambda a: a["t"])
-    # a serve comes after dead time: no shot by the near player and no bounce inside the court in the 4 s before
-    # (an overhead or a high ball in the middle of a rally looks like a serve otherwise)
-    def dead_before(h):
-        if any(0.4 < h - x < 4.0 for x in loud): return False
-        # bounces near a baseline are the server bouncing the ball (the far side reads 1-2 m short with a low camera)
-        return not any(0.3 < h - b["t"] < 4.0 and 1.5 < b["court"][1] < 20.0 for b in bs)
     attempts = [a_ for a_ in attempts if dead_before(a_["t"])]
     # --- each attempt: serve bounce, returned?, rally ---
     for i, a_ in enumerate(attempts):
