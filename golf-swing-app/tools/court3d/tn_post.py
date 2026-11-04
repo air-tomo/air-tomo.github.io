@@ -132,13 +132,29 @@ def near_cut(bs, t_from, hits, loud, clip_end):
     if clip_end - last <= 4.5: return clip_end
     far = [x for x in hits if last < x <= last + 3.0] + [b["t"] for b in bs if last < b["t"] <= last + 3.0]
     return round(max([last] + far) + 1.5, 3)
+def own_side_cut(bs, t_from, hits, near):
+    """sides alternate in a rally: after the near player's shot the far player hits, and that ball must come to the near side.
+    If the next thing seen is a bounce on the far side (the hitter's own side), the shot went out of the picture or into the
+    net, and the ball seen is another ball (or the same ball not crossing): the point ends at that shot.
+    Returns (time after which bounces are not part of the point, end time) or None."""
+    nev = sorted([h for h in near if h > t_from - 0.01] + [b["t"] for b in bs if b["t"] > t_from and b["court"][1] < 11.885])
+    for hf in hits:
+        if hf <= t_from or any(abs(hf - n) < 0.05 for n in near): continue
+        before = [n for n in nev if n < hf]
+        if not before or not 0.8 <= hf - before[-1] <= 3.0: continue
+        nxt = next((n for n in nev if n > hf), 1e9)
+        if any(0.5 <= b["t"] - hf <= 2.0 and b["t"] < nxt and 11.885 < b["court"][1] < 23.0 for b in bs):
+            return hf + 0.3, round(hf + 1.5, 3)
+    return None
 def rally_until(P, bs, i0, t_from, hits, clip_end, loud=None):
     """bounces of the rally after bs[i0-1] up to the end of the point. Returns (list of bounces, end time).
     The point is over when the ball goes out, bounces twice on one side (or rolls) with no shot in between, is not seen for 2 s,
     or nothing happens (no shot, no bounce) for 3.5 s (a lob takes 3 s): the ball flew out of the picture or into the net, and what the
     detector finds after that is another ball."""
     out, last_t = [], t_from
-    cut = near_cut(bs, t_from, hits, loud, clip_end) if loud is not None else clip_end
+    cut, blim = (near_cut(bs, t_from, hits, loud, clip_end) if loud is not None else clip_end), 1e9
+    own = own_side_cut(bs, t_from, hits, loud) if loud is not None else None
+    if own: blim, cut = own[0], min(cut, own[1])
     prev = bs[i0 - 1] if i0 > 0 and abs(bs[i0 - 1]["t"] - t_from) < 1e-6 else None
     act = t_from
     def quiet(t1):
@@ -147,7 +163,7 @@ def rally_until(P, bs, i0, t_from, hits, clip_end, loud=None):
             if b - a > 3.5: return a
         return None
     for bb in bs[i0:]:
-        if bb["t"] > cut: return out, cut
+        if bb["t"] > min(cut, blim): return out, cut
         g = ball_gap(P, last_t, bb["t"])
         if g is not None: return out, min(cut, g + 1.0)
         q = quiet(bb["t"])
