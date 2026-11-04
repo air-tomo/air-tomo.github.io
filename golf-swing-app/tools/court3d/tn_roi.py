@@ -3,9 +3,10 @@ position (about 1/4 of the frame). Falls back to the whole frame when the ball i
 Usage: tn_roi.py video t0 dur out.json model.pt"""
 import sys, os, json, subprocess, time, numpy as np, torch, tnet
 video, t0, dur, out = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
-X0, Y0, CW = 320, 120, 1280
+# the part of the frame the detector looks at (scaled to half size, as TrackNet was trained); set per video with TN_X0 etc.
+X0, Y0, CW = int(os.environ.get("TN_X0", 320)), int(os.environ.get("TN_Y0", 120)), int(os.environ.get("TN_CW", 1280))
 CH = int(os.environ.get("TN_CH", 512)); FR = 30
-IW, IH = 640, CH // 2                      # model input size for the whole frame
+IW, IH = CW // 2, CH // 2                  # model input size for the whole frame (multiples of 8)
 RW, RH = int(os.environ.get("ROI_W", 320)), int(os.environ.get("ROI_H", 128))   # window (multiples of 8)
 dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 m = tnet.load(sys.argv[5] if len(sys.argv) > 5 else "model_best.pt").to(dev); torch.set_num_threads(int(os.environ.get("THREADS", 4)))

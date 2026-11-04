@@ -8,6 +8,11 @@ MATCH, CAM, ENV, OUT = sys.argv[1:5]
 cam = np.load(CAM); K, R, t, Hm = cam["K"], cam["R"], cam["t"], cam["H"]; Hinv = np.linalg.inv(Hm)
 def ground(u, v): return cv2.perspectiveTransform(np.array([[[u, v]]], float), Hinv)[0, 0]
 def proj(X): X = np.atleast_2d(X); p = (K @ (R @ X.T + t[:, None])).T; return p[:, :2] / p[:, 2:]
+# pixel sizes scale with the focal length; rows are measured from the net top (tuned on IMG_0131: f 1637, net top at row 446)
+PX = K[0, 0] / 1637.0
+NET_TOP_ROW = float(proj([0, 11.885, 0.914])[0, 1])
+HIGH_ROW = NET_TOP_ROW - 186 * PX       # a near player's serve starts above this row
+LOW_ROW = NET_TOP_ROW - 46 * PX         # ... and comes down below this one within 0.5 s
 def simulate(p0, v0, ts, k=0.0204, g=9.81, dt=1 / 600):
     out = []; p = np.array(p0, float); v = np.array(v0, float); tc = 0.0
     for T in ts:
@@ -28,7 +33,7 @@ def clean(pts):
     keep = []
     for i, (tt, x, y) in enumerate(P):
         nb = [P[j] for j in (i - 1, i + 1) if 0 <= j < len(P) and abs(P[j][0] - tt) < 0.1]
-        if nb and min(np.hypot(x - a[1], y - a[2]) for a in nb) > 80: continue
+        if nb and min(np.hypot(x - a[1], y - a[2]) for a in nb) > 80 * PX: continue
         keep.append((tt, x, y))
     return keep
 def find_bounces(P):
@@ -36,7 +41,7 @@ def find_bounces(P):
     for i in range(2, len(P) - 2):
         (ta, xa, ya), (t1, x1, y1), (tb, xb, yb) = P[i - 2], P[i], P[i + 2]
         if tb - ta > 0.3: continue
-        if not (y1 >= P[i - 1][2] and y1 >= P[i + 1][2] and y1 - ya > 3 and y1 - yb > 3): continue
+        if not (y1 >= P[i - 1][2] and y1 >= P[i + 1][2] and y1 - ya > 3 * PX and y1 - yb > 3 * PX): continue
         if any(abs(t1 - h) < 0.07 for h in loud_hits): continue      # racket of the near player
         # the frame nearest the bounce may miss the lowest point: intersect the falling and the rising paths
         pre = [q for q in P[max(0, i - 3):i + 1] if t1 - q[0] < 0.25]; post = [q for q in P[i:i + 4] if q[0] - t1 < 0.25]
@@ -197,12 +202,12 @@ for arg in sys.argv[5:]:
     attempts = []
     for h in loud:
         seg = [q for q in P if 0.05 < q[0] - h < 0.5]
-        if len(seg) < 3 or seg[-1][2] < 400: continue
+        if len(seg) < 3 or seg[-1][2] < LOW_ROW: continue
         # height just after the contact: the first points can be missed, so carry the falling path back to h + 0.05
         y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0])
-        if min(seg[0][2], y0) > 260: continue
+        if min(seg[0][2], y0) > HIGH_ROW: continue
         d = np.hypot(np.diff([q[1] for q in seg]), np.diff([q[2] for q in seg])) / np.diff([q[0] for q in seg]) / 30
-        if np.median(d) > 15: attempts.append({"t": h, "side": "far"})
+        if np.median(d) > 15 * PX: attempts.append({"t": h, "side": "far"})
     # far player: lands in (or near) a near service box, fast, hit high (>= 1.8 m) at the far baseline
     for bb in bs:
         x, y = bb["court"]

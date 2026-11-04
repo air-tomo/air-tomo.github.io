@@ -27,7 +27,15 @@
   /* cam = {K, R, t, H}（tn_post.py の cam npz と同じ中身） */
   function camera(cam) {
     const Hinv = inv3(cam.H);
+    // 画素の大きさは焦点距離に比例。行は網の上端から測る（IMG_0131 で決めた値: f 1637、網の上端は 446 行目）
+    const pr = function (X) {
+      const R = cam.R, K = cam.K, t = cam.t;
+      const c = [0, 1, 2].map(function (r) { return R[r][0] * X[0] + R[r][1] * X[1] + R[r][2] * X[2] + t[r]; });
+      return [(K[0][0] * c[0] + K[0][1] * c[1] + K[0][2] * c[2]) / c[2], (K[1][0] * c[0] + K[1][1] * c[1] + K[1][2] * c[2]) / c[2]];
+    };
+    const px = cam.K[0][0] / 1637, netTop = pr([0, NET_Y, 0.914])[1];
     return {
+      px: px, highRow: netTop - 186 * px, lowRow: netTop - 46 * px,
       ground: function (u, v) { return applyH(Hinv, u, v); },
       /* 画素 (u, v) を通る視線が奥行き y = yPlane の面と交わる点の高さ (m) */
       rayHeight: function (u, v, yPlane) {
@@ -128,11 +136,12 @@
   // ---- ボールの点列 ----
 
   /* [[t, u|null, v|null], ...] → 外れ値（前後の点から 80 画素以上離れた点）を除いた [[t, u, v], ...] */
-  function clean(pts) {
+  function clean(pts, px) {
+    px = px || 1;
     const P = pts.filter(function (q) { return q[1] != null; });
     return P.filter(function (q, i) {
       const nb = [P[i - 1], P[i + 1]].filter(function (a) { return a && Math.abs(a[0] - q[0]) < 0.1; });
-      return !(nb.length && Math.min.apply(null, nb.map(function (a) { return Math.hypot(q[1] - a[1], q[2] - a[2]); })) > 80);
+      return !(nb.length && Math.min.apply(null, nb.map(function (a) { return Math.hypot(q[1] - a[1], q[2] - a[2]); })) > 80 * px);
     });
   }
 
@@ -142,7 +151,7 @@
     for (let i = 2; i < P.length - 2; i++) {
       const A = P[i - 2], Q = P[i], B = P[i + 2];
       if (B[0] - A[0] > 0.3) continue;
-      if (!(Q[2] >= P[i - 1][2] && Q[2] >= P[i + 1][2] && Q[2] - A[2] > 3 && Q[2] - B[2] > 3)) continue;
+      if (!(Q[2] >= P[i - 1][2] && Q[2] >= P[i + 1][2] && Q[2] - A[2] > 3 * cam.px && Q[2] - B[2] > 3 * cam.px)) continue;
       if (loudHits.some(function (h) { return Math.abs(Q[0] - h) < 0.07; })) continue;
       let t1 = Q[0], x1 = Q[1], y1 = Q[2];
       // 一番低い点を取り逃すことがあるので、落ちる線と上がる線の交点を使う
@@ -227,17 +236,17 @@
    * 返り値: {ball, bounces, serve, ranges, points}（tn_post.py と同じ形）
    */
   function analyzeClip(pts, allHits, loudHits, clip, cam) {
-    const P = clean(pts);
+    const P = clean(pts, cam.px);
     const bs = findBounces(P, loudHits, cam);
     const hits = allHits.filter(function (h) { return h >= clip.start - 0.5 && h <= clip.end && !bs.some(function (b) { return Math.abs(h - b.t) < 0.08; }); });
     const loud = loudHits.filter(function (h) { return h >= clip.start - 0.5 && h <= clip.end; });
     // 手前の選手のサーブ: 大きな打球音のあと、ボールが画面の高い所から奥のコートへ速く下りる
     const nearServes = loud.filter(function (h) {
       const seg = P.filter(function (q) { return q[0] - h > 0.05 && q[0] - h < 0.5; });
-      if (seg.length < 3 || seg[0][2] > 260 || seg[seg.length - 1][2] < 400) return false;
+      if (seg.length < 3 || seg[0][2] > cam.highRow || seg[seg.length - 1][2] < cam.lowRow) return false;
       const d = [];
       for (let i = 1; i < seg.length; i++) d.push(Math.hypot(seg[i][1] - seg[i - 1][1], seg[i][2] - seg[i - 1][2]) / (seg[i][0] - seg[i - 1][0]) / 30);
-      return median(d) > 15;
+      return median(d) > 15 * cam.px;
     });
     const events = nearServes.map(function (h) { return { t: h, kind: 'serve_hit' }; })
       .concat(bs.map(function (b) { return { t: b.t, kind: 'bounce', b: b }; }))
@@ -390,7 +399,7 @@
   function analyzeMatch(clips, allHits, loudHits, cam, nearHits) {
     nearHits = nearHits || loudHits;
     const C = clips.map(function (c) {
-      const P = clean(c.pts), bs = findBounces(P, loudHits, cam);
+      const P = clean(c.pts, cam.px), bs = findBounces(P, loudHits, cam);
       const hits = allHits.filter(function (h) { return h >= c.start - 0.5 && h <= c.end && !bs.some(function (b) { return Math.abs(h - b.t) < 0.08; }); });
       const loud = loudHits.filter(function (h) { return h >= c.start - 0.5 && h <= c.end; });
       // 手前の選手の打球（ネットに出てきたときは少し小さい音。そのときは前後 0.5 秒にボールが 10 回以上見えていること）
@@ -405,12 +414,12 @@
       const P = cd.P, bs = cd.bs, hits = cd.hits, loud = cd.loud, list = [];
       loud.forEach(function (h) {     // 手前の選手のサーブ
         const seg = P.filter(function (q) { return q[0] - h > 0.05 && q[0] - h < 0.5; });
-        if (seg.length < 3 || seg[seg.length - 1][2] < 400) return;
+        if (seg.length < 3 || seg[seg.length - 1][2] < cam.lowRow) return;
         // 打った直後の高さ: 最初の数フレームは取れないことがあるので、落ちてくる線を h + 0.05 秒まで戻す
         const y0 = seg[0][2] - (seg[0][0] - h - 0.05) * (seg[1][2] - seg[0][2]) / (seg[1][0] - seg[0][0]);
-        if (Math.min(seg[0][2], y0) > 260) return;
+        if (Math.min(seg[0][2], y0) > cam.highRow) return;
         const d = []; for (let i = 1; i < seg.length; i++) d.push(Math.hypot(seg[i][1] - seg[i - 1][1], seg[i][2] - seg[i - 1][2]) / (seg[i][0] - seg[i - 1][0]) / 30);
-        if (median(d) > 15) list.push({ t: h, side: 'far' });
+        if (median(d) > 15 * cam.px) list.push({ t: h, side: 'far' });
       });
       bs.forEach(function (bb) {      // 奥の選手のサーブ: 手前のサービスボックス付近へ速く、ベースラインで高い打点（1.8m 以上）
         if (!nearBox(bb.court[0], bb.court[1])) return;
