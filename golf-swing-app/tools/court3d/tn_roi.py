@@ -6,7 +6,8 @@ video, t0, dur, out = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), sys.a
 # the part of the frame the detector looks at (scaled to half size, as TrackNet was trained); set per video with TN_X0 etc.
 X0, Y0, CW = int(os.environ.get("TN_X0", 320)), int(os.environ.get("TN_Y0", 120)), int(os.environ.get("TN_CW", 1280))
 CH = int(os.environ.get("TN_CH", 512)); FR = 30
-IW, IH = CW // 2, CH // 2                  # model input size for the whole frame (multiples of 8)
+SC = int(os.environ.get("TN_SCALE", 2))   # 2: half size (as TrackNet was trained); 1: full size for a small, far ball
+IW, IH = CW // SC, CH // SC                # model input size for the whole frame (multiples of 8)
 RW, RH = int(os.environ.get("ROI_W", 320)), int(os.environ.get("ROI_H", 128))   # window (multiples of 8)
 dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 m = tnet.load(sys.argv[5] if len(sys.argv) > 5 else "model_best.pt").to(dev); torch.set_num_threads(int(os.environ.get("THREADS", 4)))
@@ -38,6 +39,6 @@ for i in range(2, len(frames)):
     if pos is None:
         pos = run(i, 0, 0, IW, IH); n_full += 1
     if pos is not None: hist.append((i, pos[0], pos[1]))
-    res.append([round(t0 + i / FR, 4)] + ([round(X0 + pos[0] * 2, 1), round(Y0 + pos[1] * 2, 1)] if pos else [None, None]))
+    res.append([round(t0 + i / FR, 4)] + ([round(X0 + pos[0] * SC, 1), round(Y0 + pos[1] * SC, 1)] if pos else [None, None]))
 json.dump(res, open(out, "w"))
 print("frames", len(res), "detected", sum(r[1] is not None for r in res), "full-frame runs", n_full, "sec/frame", round((time.time() - t) / max(1, len(res)), 2))

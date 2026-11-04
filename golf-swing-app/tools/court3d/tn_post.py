@@ -26,6 +26,17 @@ loud_hits = [x for x, l in zip(times, lv) if l >= loud]
 # the near player's shots also when they come to the net (a bit quieter, so the ball must be seen around the sound);
 # used to tell whether the ball came back
 near_hits = [x for x, l in zip(times, lv) if l >= loud - 4]
+# hand-held camera: stabilize.py gives, every 0.2 s, the homography from the frame to the calibration frame
+STAB = json.load(open(os.environ["STAB"]))["clips"] if os.environ.get("STAB") else None
+def to_ref(pts, rows):
+    ts = np.array([r[0] for r in rows]); Hs = np.array([r[1:] for r in rows]).reshape(-1, 3, 3)
+    out = []
+    for tt, x, y in pts:
+        if x is None: out.append([tt, None, None]); continue
+        j = int(np.clip(np.searchsorted(ts, tt), 1, len(ts) - 1)); a = float(np.clip((tt - ts[j - 1]) / max(1e-6, ts[j] - ts[j - 1]), 0, 1)) if len(ts) > 1 else 0
+        Hh = Hs[j - 1] * (1 - a) + Hs[j] * a if len(ts) > 1 else Hs[0]
+        q = Hh @ [x, y, 1.0]; out.append([tt, round(float(q[0] / q[2]), 1), round(float(q[1] / q[2]), 1)])
+    return out
 def clean(pts):
     """drop isolated jumps (> 80 px from both neighbours' interpolation)"""
     P = [(tt, x, y) for tt, x, y in pts if x is not None]
@@ -192,7 +203,9 @@ def returned(t_bounce, hits):
 CLIPS, ALL_ATTEMPTS = {}, []
 for arg in sys.argv[5:]:
     k, path = arg.split(":"); k = int(k); c = M["clips"][k]
-    P = clean(json.load(open(path)))
+    raw = json.load(open(path))
+    if STAB is not None and str(k) in STAB: raw = to_ref(raw, STAB[str(k)])
+    P = clean(raw)
     bs = find_bounces(P)
     hits = [h for h in ALL_HITS if c["start"] - 0.5 <= h <= c["end"] and not any(abs(h - b["t"]) < 0.08 for b in bs)]
     loud = [h for h in loud_hits if c["start"] - 0.5 <= h <= c["end"]]

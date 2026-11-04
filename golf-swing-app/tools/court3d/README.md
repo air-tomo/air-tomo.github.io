@@ -89,3 +89,5 @@ CPU（4 コア）では 1 フレーム約 3.5 秒かかり、試合全体（約 
 2. ボール検出の範囲を `TN_X0 TN_Y0 TN_CW TN_CH`、書き出す範囲を `RENDER_CX RENDER_CY RENDER_CW` で指定して `make_video.py`
 3. 画素で決めていたしきい値（外れ値 80px、サーブの高さの行など）は、焦点距離と網の上端の位置から自動で換算する
    （IMG_0131 では今までと同じ値）
+4. 手持ちなどでカメラが動く動画は `stabilize.py VIDEO 基準の秒 match.json stab.json` で 0.2 秒ごとのずれを求め、
+   `STAB=stab.json` を付けて `tn_post.py` と `render.py` を動かす（ボール位置を基準の画面に直して解析し、描くときに戻す）
