@@ -312,8 +312,27 @@
    * ポイントの終わり: アウト、同じ側で打球なしに 2 回バウンド（転がっている）、ボールが 2 秒見えない、
    * または打球もバウンドも 3.5 秒ない（画面の外やネットへ。そのあと見つかるのは別のボール。ロブは 3 秒かかる）
    */
-  function rallyUntil(P, bs, i0, tFrom, hits, clipEnd) {
+  /*
+   * ラリーは行ったり来たり: ボールが奥へ行ったら 4.5 秒以内に戻ってくる（手前の半面でバウンド、または手前の選手の打球）。
+   * 戻ってこなければ奥の選手の打球がアウトかネット: 奥側で最後に何かあってから 1.5 秒で終わり（そのあとの小さい音は足音や隣のコート）
+   */
+  function nearCut(bs, tFrom, hits, near, clipEnd) {
+    const ev = near.filter(function (h) { return h > tFrom; })
+      .concat(bs.filter(function (b) { return b.t > tFrom && b.court[1] < NET_Y; }).map(function (b) { return b.t; }))
+      .sort(function (a, b) { return a - b; });
+    let last = tFrom, broke = false;
+    for (const e of ev.concat([clipEnd + 10])) {
+      if (e > clipEnd + 5 || e - last > 4.5) { broke = true; break; }
+      last = e;
+    }
+    if (!broke || clipEnd - last <= 4.5) return clipEnd;
+    const far = hits.filter(function (x) { return x > last && x <= last + 3.0; })
+      .concat(bs.filter(function (b) { return b.t > last && b.t <= last + 3.0; }).map(function (b) { return b.t; }));
+    return r3(Math.max.apply(null, [last].concat(far)) + 1.5);
+  }
+  function rallyUntil(P, bs, i0, tFrom, hits, clipEnd, near) {
     const out = []; let lastT = tFrom, act = tFrom;
+    const cut = near ? nearCut(bs, tFrom, hits, near, clipEnd) : clipEnd;
     let prev = i0 > 0 && Math.abs(bs[i0 - 1].t - tFrom) < 1e-6 ? bs[i0 - 1] : null;
     const quiet = function (t1) {
       const ev = [act].concat(hits.filter(function (h) { return h > act && h < t1; }), [t1]);
@@ -321,8 +340,9 @@
       return null;
     };
     for (const bb of bs.slice(i0)) {
+      if (bb.t > cut) return [out, cut];
       const g = ballGap(P, lastT, bb.t);
-      if (g != null) return [out, g + 1.0];
+      if (g != null) return [out, Math.min(cut, g + 1.0)];
       const q = quiet(bb.t);
       if (q != null) return [out, q + 1.5];
       bb.kind = 'rally'; bb.call = call(bb.court[0], bb.court[1], [-SINGLES, SINGLES, 0, BASE_F]);
@@ -333,11 +353,11 @@
       prev = bb; act = bb.t;
     }
     const g = ballGap(P, lastT, clipEnd);
-    if (g != null) return [out, g + 1.0];
+    if (g != null) return [out, Math.min(cut, g + 1.0)];
     const after = hits.filter(function (h) { return h - lastT > 0 && h - lastT < 1.5; });
     const end = (after.length ? after[after.length - 1] : lastT) + 1.5;
     const q = quiet(clipEnd);
-    return [out, Math.min(clipEnd, end, q != null ? q + 1.5 : end)];
+    return [out, Math.min(clipEnd, cut, end, q != null ? q + 1.5 : end)];
   }
   /* ラリーでは打球が続く: サーブのバウンドから 4.5 秒以内に打球音が 2 回以上。フォルトのあとは多くても 1 回 */
   function returned(tBounce, hits) { return hits.filter(function (h) { return h - tBounce > 0.1 && h - tBounce < 4.5; }).length >= 2; }
@@ -346,12 +366,18 @@
    * 試合全体を解析する。clips: [{start, end, pts}]（pts はボール検出の出力）、allHits / loudHits: 打球音の時刻。
    * 返り値: {clips: [{ball, bounces, serve, ranges}], points: [{ranges: [[clipIndex, a, b], ...], serves: [{t, side, fault, speed}]}]}
    */
-  function analyzeMatch(clips, allHits, loudHits, cam) {
+  function analyzeMatch(clips, allHits, loudHits, cam, nearHits) {
+    nearHits = nearHits || loudHits;
     const C = clips.map(function (c) {
       const P = clean(c.pts), bs = findBounces(P, loudHits, cam);
       const hits = allHits.filter(function (h) { return h >= c.start - 0.5 && h <= c.end && !bs.some(function (b) { return Math.abs(h - b.t) < 0.08; }); });
       const loud = loudHits.filter(function (h) { return h >= c.start - 0.5 && h <= c.end; });
-      return { P: P, bs: bs, hits: hits, loud: loud, c: c, res: { ball: P, bounces: [], serve: null, ranges: [] } };
+      // 手前の選手の打球（ネットに出てきたときは少し小さい音。そのときは前後 0.5 秒にボールが 10 回以上見えていること）
+      const near = nearHits.filter(function (h) {
+        return h >= c.start - 0.5 && h <= c.end &&
+          (loud.indexOf(h) >= 0 || P.filter(function (q) { return Math.abs(q[0] - h) <= 0.5; }).length >= 10);
+      });
+      return { P: P, bs: bs, hits: hits, loud: loud, near: near, c: c, res: { ball: P, bounces: [], serve: null, ranges: [] } };
     });
     const attempts = [];
     C.forEach(function (cd, ci) {
@@ -442,7 +468,7 @@
           if (i0 < 0) i0 = cd.bs.length;
           const nxt = all.find(function (b) { return b.t > a.t; });
           const nxtT = nxt ? nxt.t : c.end;
-          const rr = rallyUntil(cd.P, cd.bs.filter(function (b) { return b.t < nxtT; }), i0, sb ? sb.t : a.t, cd.hits, c.end);
+          const rr = rallyUntil(cd.P, cd.bs.filter(function (b) { return b.t < nxtT; }), i0, sb ? sb.t : a.t, cd.hits, c.end, cd.near);
           rr[0].forEach(function (b) { r.bounces.push(b); }); end = rr[1];
         }
         const rg = [r3(Math.max(c.start, a.t - 1.2)), r3(Math.min(c.end, end))];
@@ -458,9 +484,9 @@
     return { clips: C.map(function (cd) { return cd.res; }), points: points };
   }
 
-  /* 打球音のうち「大きい音」（手前の選手）: 上位 10% の音量から 6dB 以内 */
-  function loudHitsOf(times, levels) {
-    const th = percentile(levels, 90) - 6;
+  /* 打球音のうち「大きい音」（手前の選手）: 上位 10% の音量から 6dB 以内（db で変えられる。ネット際も含めるなら 10） */
+  function loudHitsOf(times, levels, db) {
+    const th = percentile(levels, 90) - (db == null ? 6 : db);
     return times.filter(function (t, i) { return levels[i] >= th; });
   }
 

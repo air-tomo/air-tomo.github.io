@@ -86,6 +86,7 @@ $('startBtn').addEventListener('click', async () => {
     state.allHits = hits.times;
     const levels = hits.times.map((t) => state.prep.env[Math.min(state.prep.env.length - 1, Math.round(t / Detect.HOP_SEC - 0.5))]);
     state.loudHits = Rally.loudHitsOf(hits.times, levels);
+    state.nearHits = Rally.loudHitsOf(hits.times, levels, 10);
     await startCalibration();
   } catch (e) { fail(e); }
 });
@@ -203,7 +204,7 @@ $('calibOkBtn').addEventListener('click', async () => {
       done += c.end - c.start;
     }
     progress('ポイントを組み立てています', 1);
-    state.match = Rally.analyzeMatch(clipData, state.allHits, state.loudHits, cam);
+    state.match = Rally.analyzeMatch(clipData, state.allHits, state.loudHits, cam, state.nearHits);
     buildPoints(); show('stepResult');
   } catch (e) { fail(e); }
 });
