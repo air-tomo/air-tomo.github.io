@@ -26,10 +26,19 @@ COURT = [((-5.485, 0), (5.485, 0)), ((-5.485, 23.77), (5.485, 23.77)), ((-5.485,
 CALL_COL = {"IN": (60, 220, 90), "OUT": (255, 60, 60), "CLOSE": (255, 200, 0)}
 CALL_TXT = {"IN": "IN", "OUT": "OUT", "CLOSE": "微妙"}
 def fmt(t): return "%d:%02d" % (int(t) // 60, int(t) % 60)
+# hand-held camera (stabilize.py): positions are in the calibration frame; move them to this frame to draw
+STAB = json.load(open(os.environ["STAB"]))["clips"] if os.environ.get("STAB") else {}
+def to_frame(k, t, x, y):
+    rows = STAB.get(str(k))
+    if not rows: return x, y
+    ts = [r[0] for r in rows]; j = min(range(len(ts)), key=lambda i: abs(ts[i] - t))
+    q = np.linalg.inv(np.array(rows[j][1:]).reshape(3, 3)) @ [x, y, 1.0]
+    return q[0] / q[2], q[1] / q[2]
 def draw_frame(img, t, clip, k, title):
     pil = Image.fromarray(img); d = ImageDraw.Draw(pil, "RGBA")
     # ball trail (last 0.3 s)
-    tr = [(bt, (x - CX) * SC, (y - CY) * SC) for bt, x, y in clip["ball"] if t - 0.3 < bt <= t + 1e-6]
+    tr = [(bt,) + to_frame(k, t, x, y) for bt, x, y in clip["ball"] if t - 0.3 < bt <= t + 1e-6]
+    tr = [(bt, (x - CX) * SC, (y - CY) * SC) for bt, x, y in tr]
     for i, (bt, x, y) in enumerate(tr):
         a = (bt - (t - 0.3)) / 0.3; r = 2 + 4 * a
         d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 230, 0, int(80 + 175 * a)))
@@ -37,7 +46,7 @@ def draw_frame(img, t, clip, k, title):
     for b in clip["bounces"]:
         dt = t - b["t"]
         if 0 <= dt < 1.5:
-            x, y = (b["uv"][0] - CX) * SC, (b["uv"][1] - CY) * SC; r = 10 + 20 * dt
+            x, y = to_frame(k, t, b["uv"][0], b["uv"][1]); x, y = (x - CX) * SC, (y - CY) * SC; r = 10 + 20 * dt
             col = CALL_COL.get(b.get("call"), (255, 60, 60))
             al = int(255 * (1 - dt / 1.5))
             d.ellipse([x - r, y - r * 0.45, x + r, y + r * 0.45], outline=col + (al,), width=3)
