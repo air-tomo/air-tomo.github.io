@@ -5,7 +5,8 @@ from PIL import Image, ImageDraw, ImageFont
 VIDEO, MATCH, OUTDIR, FINAL = sys.argv[1:5]
 TN = json.load(open(os.environ["TN"])) if os.environ.get("TN") else {}
 W, H, FPS = 1280, 720, 30
-CX, CY, CWID = 160, 0, 1600          # crop of the 1920x1080 source (drops the near-camera ground), scaled to W x H
+# crop of the 1920x1080 source (drops the near-camera ground), scaled to W x H; RENDER_CX etc. for another camera position
+CX, CY, CWID = int(os.environ.get("RENDER_CX", 160)), int(os.environ.get("RENDER_CY", 0)), int(os.environ.get("RENDER_CW", 1600))
 SC = W / CWID
 FONT = next(f for f in ["/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf", "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
                          "/System/Library/Fonts/Hiragino Sans GB.ttc", "/Library/Fonts/Arial Unicode.ttf"] if os.path.exists(f))
