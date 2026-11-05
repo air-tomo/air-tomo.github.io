@@ -13,6 +13,7 @@ from train_small import SmallNet, peak
 ap = argparse.ArgumentParser()
 ap.add_argument("video"); ap.add_argument("t0", type=float); ap.add_argument("dur", type=float); ap.add_argument("out"); ap.add_argument("model")
 ap.add_argument("--y0", type=int, default=300); ap.add_argument("--h", type=int, default=704); ap.add_argument("--thr", type=float, default=0.5); ap.add_argument("--top", type=int, default=5)
+ap.add_argument("--every", type=int, default=1, help="run the model on every N-th frame (3 frames in a row, as trained; 3 = 10 per second, enough to cut points)")
 a = ap.parse_args()
 W, H, FR = 1920, 1080, 30
 torch.set_num_threads(int(__import__("os").environ.get("THREADS", 4)))
@@ -34,7 +35,7 @@ while True:
     b = p.stdout.read(W * a.h * 3)
     if len(b) < W * a.h * 3: break
     ring = (ring + [np.frombuffer(b, np.uint8).reshape(a.h, W, 3)])[-3:]
-    if len(ring) == 3:
+    if len(ring) == 3 and i % a.every == 0:
         x = np.concatenate([ring[2], ring[1], ring[0]], 2).astype(np.float32).transpose(2, 0, 1)[None] / 255
         with torch.no_grad(): heat = torch.sigmoid(m(torch.from_numpy(x)))[0].numpy()
         q = peak(heat, a.thr); cand.append([round(a.t0 + i / FR, 4), peaks(heat, a.top, 0.35)])
