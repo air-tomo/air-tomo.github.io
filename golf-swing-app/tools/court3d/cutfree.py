@@ -4,7 +4,8 @@
 
 TRACKS.json: tracks from track.py ([[[t, x, y], ...], ...]); HITS.json: hit sound times [t, ...].
 A shot = a hit sound where a fast ball track starts (within -0.1 .. +0.3 s) or turns (velocity changes direction).
-A point = shots no more than 3.6 s apart; it starts 1.5 s before the first shot (the toss) and ends 2 s after the last.
+A point = shots no more than 3.6 s apart, grown over fast ball flights just before / after (sound not heard, ball flying away);
+it starts 2 s before (the toss) and ends 2.5 s after.
 Single shots are kept only if the ball flew far (a serve that was not returned, a winner), else dropped (a knock-up,
 the server bouncing the ball).
 Prints and writes [[start, end, number of shots], ...].
@@ -41,17 +42,36 @@ def shots(tracks, hits, W):
     return out
 
 
-def points(sh, W, gap=3.6, pre=1.5, post=2.0):
+def points(sh, W, gap=3.6, pre=2.0, post=2.5, tracks=None, link=2.5):
+    """chains of shots; with tracks, a chain grows over the fast ball flights right before / after it (a serve whose sound
+    was not heard, the last shot flying away), so the point is not cut short"""
     ch, cur = [], []
     for s in sh:
         if cur and s[0] - cur[-1][0] > gap: ch.append(cur); cur = []
         cur.append(s)
     if cur: ch.append(cur)
-    return [[round(c[0][0] - pre, 2), round(c[-1][0] + post, 2), len(c)] for c in ch if len(c) >= 2 or c[0][1] > 0.25 * W]
+    F = sorted([(t[0][0], t[-1][0]) for t in (tracks or []) if fast(t, W)])
+    out = []
+    for c in ch:
+        if not (len(c) >= 2 or c[0][1] > 0.25 * W): continue
+        a, b = c[0][0], c[-1][0]
+        grown = True
+        while grown:
+            grown = False
+            for s0, s1 in F:
+                if s1 >= a - link and s0 < a: a = s0; grown = True
+                if s0 <= b + link and s1 > b: b = s1; grown = True
+        out.append([round(a - pre, 2), round(b + post, 2), len(c)])
+    merged = []
+    for p in out:
+        if merged and p[0] <= merged[-1][1]: merged[-1] = [merged[-1][0], max(merged[-1][1], p[1]), merged[-1][2] + p[2]]
+        else: merged.append(p)
+    return merged
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("tracks"); ap.add_argument("hits"); ap.add_argument("out"); ap.add_argument("--width", type=int, default=1920)
     a = ap.parse_args()
-    P = points(shots(json.load(open(a.tracks)), json.load(open(a.hits)), a.width), a.width)
+    T = json.load(open(a.tracks))
+    P = points(shots(T, json.load(open(a.hits)), a.width), a.width, tracks=T)
     json.dump(P, open(a.out, "w")); print(P)

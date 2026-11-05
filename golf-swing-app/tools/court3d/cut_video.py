@@ -28,7 +28,7 @@ for k, (s, e) in enumerate(segs):
                         "--y0", str(a.y0), "--h", str(a.h)], check=True)
     T = track.tracks(json.load(open(out.replace(".json", "_cand.json"))))
     json.dump(T, open(os.path.join(a.outdir, "tracks_%03d.json" % k), "w"))
-    P = cutfree.points(cutfree.shots(T, [h for h in hits if s <= h <= e], 1920), 1920)
+    P = cutfree.points(cutfree.shots(T, [h for h in hits if s <= h <= e], 1920), 1920, tracks=T)
     allp += [[max(s, p[0]), min(e, p[1]), p[2]] for p in P]
     print("segment", k, "%.1f-%.1f" % (s, e), "points", P, flush=True)
 json.dump(allp, open(os.path.join(a.outdir, "points.json"), "w"))
