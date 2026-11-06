@@ -4,6 +4,8 @@ from scipy.optimize import least_squares
 import os
 sys.path.insert(0, os.environ.get("APP_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
 import swing
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import predict_land
 MATCH, CAM, ENV, OUT = sys.argv[1:5]
 cam = np.load(CAM); K, R, t, Hm = cam["K"], cam["R"], cam["t"], cam["H"]; Hinv = np.linalg.inv(Hm)
 def ground(u, v): return cv2.perspectiveTransform(np.array([[[u, v]]], float), Hinv)[0, 0]
@@ -302,7 +304,26 @@ while i < len(ALL_ATTEMPTS):
     if len(parts) == 2 and not last["returned"] and last["bounce"] is not None and last["bounce"]["call"] != "IN":
         last["fault"] = True; last["bounce"]["call"] = "OUT"             # double fault
     points.append(parts); i += 1
-for k in CLIPS: res[k] = {"ball": CLIPS[k]["P"], "bounces": [], "serve": None, "ranges": [], "points": []}
+for k in CLIPS: res[k] = {"ball": CLIPS[k]["P"], "bounces": [], "serve": None, "ranges": [], "points": [], "predicted": []}
+PCAM = predict_land.Cam(CAM)
+def predict_last(P, hits, near_hits, t_from, t_end, seen_bounces):
+    """the last shot of the point flew out of the picture (or its bounce was hidden): fly the seen part of it on to the ground.
+    Returns {t, court, call, hit} or None. 'call' uses a wide margin (the depth is good to about 2 m with a low camera)."""
+    hs = [h for h in hits if t_from + 0.2 < h < t_end - 0.4]
+    if not hs: return None
+    h = hs[-1]
+    if any(b["t"] > h + 0.2 for b in seen_bounces): return None          # its bounce was seen
+    obs = [q for q in P if h + 0.03 < q[0] < min(t_end, h + 1.6)]
+    if len(obs) < 6 or obs[-1][0] - obs[0][0] < 0.2: return None
+    # the ball must be seen leaving the racket (within 0.15 s, no gap over 0.2 s): otherwise it is another ball
+    if obs[0][0] - h > 0.15 or any(b[0] - a[0] > 0.2 for a, b in zip(obs, obs[1:])): return None
+    r = predict_land.predict(PCAM, obs, h)               # who hit it is decided by the flight (sound can mislead)
+    if r is None or r[2]["med_px"] > 3.0: return None
+    (x, y), tl, info = r
+    if not (-12 < x < 12 and -8 < y < 32): return None
+    inside = min(x + 4.115, 4.115 - x, y, 23.77 - y)
+    call = "IN" if inside > 1.0 else "OUT" if inside < -2.0 else "CLOSE"
+    return {"t": round(h + tl, 3), "court": [round(x, 2), round(y, 2)], "call": call, "hit": round(h, 3), "kmh": round(info["kmh"])}
 for parts in points:
     prange = []
     for a_ in parts:
@@ -316,6 +337,8 @@ for parts in points:
             nxt_t = next((b["t"] for b in ALL_ATTEMPTS if b["t"] > a_["t"]), c["end"])
             bounces_r, end = rally_until(P, [b for b in bs if b["t"] < nxt_t], i0, sb["t"] if sb is not None else a_["t"], hits, c["end"], cd["near"])
             r["bounces"].extend(bounces_r)
+            pr = predict_last(P, hits, cd["near"], a_["t"], end, bounces_r)
+            if pr: r["predicted"].append(pr)
         rg = [round(max(c["start"], a_["t"] - 1.2), 3), round(min(c["end"], end), 3)]
         prange.append([a_["clip"]] + rg); r["ranges"].append(rg)
         if sb is not None and not a_.get("fault") and not a_.get("est"):

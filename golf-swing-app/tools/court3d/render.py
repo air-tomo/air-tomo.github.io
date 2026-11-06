@@ -13,7 +13,7 @@ FONT = next(f for f in ["/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf", "/S
 f_big, f_small = ImageFont.truetype(FONT, 26), ImageFont.truetype(FONT, 16)
 M = json.load(open(MATCH)); N = len(M["clips"])
 for k, v in TN.items():
-    c = M["clips"][int(k)]; c["ball"] = v["ball"]; c["bounces"] = v["bounces"]; c["serve"] = v.get("serve")
+    c = M["clips"][int(k)]; c["ball"] = v["ball"]; c["bounces"] = v["bounces"]; c["serve"] = v.get("serve"); c["predicted"] = v.get("predicted", [])
     if "ranges" in v: c["ranges"] = v["ranges"]       # from the serve (toss) to the end of the point, decided from the ball
 # top-down map
 MX, MY, MS = W - 170, 60, 12.0   # left, top, px per metre
@@ -63,6 +63,15 @@ def draw_frame(img, t, clip, k, title):
         r = 6 if recent else 4
         col = CALL_COL.get(b.get("call"), (255, 60, 60))
         d.ellipse([x - r, y - r, x + r, y + r], fill=col + (255 if recent else 170,), outline=(0, 0, 0, 255))
+    # the last shot flew out of the picture: its landing predicted from the seen flight (hollow mark on the map)
+    for b in clip.get("predicted", []):
+        if not (0 <= t - b["t"] < 2.5): continue
+        x, y = mp(*b["court"]); col = CALL_COL.get(b["call"], (255, 200, 0))
+        d.ellipse([x - 7, y - 7, x + 7, y + 7], outline=col + (255,), width=3)
+        near = b["court"][1] < 11.885         # the far court is too squashed with a low camera to call it
+        msg = "画面外 → 予測 %s" % (CALL_TXT[b["call"]] if near else "（奥側）")
+        d.rounded_rectangle([12, H - 56, 330, H - 16], 8, fill=(0, 0, 0, 160))
+        d.text((24, H - 51), msg, font=f_big, fill=col + (255,) if near else (230, 230, 230, 255))
     d.text((MX, MY + 310), "奥側は ±1m 程度", font=f_small, fill=(220, 220, 220, 255))
     sv = clip.get("serve")
     if sv and t >= sv["t"] and sv.get("med_px", sv["rms_px"]) < 7 and 60 < sv["kmh"] < 190:
