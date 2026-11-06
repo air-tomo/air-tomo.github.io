@@ -146,7 +146,7 @@
   // 4. 各サーブのトス（約 1.5 秒前）から最後の打球の少し後までを残す
 
   const TENNIS = {
-    preSec: 1.5, postSec: 2, sensitivity: 6, maxShotGapSec: 5, minHits: 2, keepServeOnly: true,
+    preSec: 1.5, postSec: 3.5, sensitivity: 6, maxShotGapSec: 5, minHits: 2, keepServeOnly: true,
     secondServeGapSec: 12, mergeGapSec: 3,
   };
   const HIT_MIN_GAP_SEC = 0.3; // これより近い打球音は同じ1打（反響など）
