@@ -24,6 +24,7 @@ MAX_FAULT_HITS = 2  # フォルトの打球数（サーブ＋相手が打ち返�
 # フォルトとみなす音の大きさの差（1st − 2nd、元の音量 dB）。実際の試合動画で、本当のフォルトは -1.0〜+2.3dB、
 # サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
 FAULT_QUIETER_DB = 3.0  # 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
+QUIET_POINT_DB = 3.5  # 2 打以上あっても、どれも大きな打球よりこれ以上小さければポイントではない（ポイント間の返球・隣のコート・物音）
 FAULT_LOUDER_DB = 7.0  # 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）。セカンドは軽く打つので 1st より小さく聞こえる
 # ポイントの合間にカメラの近くでボールを拾う音・足音・ボールつきが 1〜2 秒おきに続くと、前のラリーと次のサーブが
 # つながってしまう（実際の試合動画で、ポイント間が 12 秒しかない場面）。大きな打球（手前の選手の打球）が
@@ -140,6 +141,9 @@ def find_points(times, strengths, settings, levels=None):
             points.append({"start": part["start"], "end": second["end"],
                            "hits": part["hits"] + second["hits"], "parts": [part, second]})
             i += 2
+            continue
+        if len(g) >= 2 and loudest < loud - QUIET_POINT_DB:
+            i += 1
             continue
         keep = len(g) >= settings.min_hits or (len(g) == 1 and settings.keep_serve_only and is_serve(g))
         if keep:

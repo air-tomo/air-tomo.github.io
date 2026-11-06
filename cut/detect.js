@@ -157,6 +157,7 @@
   // フォルトとみなす音の大きさの差（1st − 2nd、元の音量 dB）。実際の試合動画で、本当のフォルトは -1.0〜+2.3dB、
   // サーブ直前のボールつきや隣のコートの打球を誤ってフォルトとした例は -3.3〜-9.4dB だった
   const FAULT_QUIETER_DB = 3.0; // 1st がこれより小さければフォルトではない（ボールつき・隣のコートの音）
+  const QUIET_POINT_DB = 3.5; // 2 打以上あっても、どれも大きな打球よりこれ以上小さければポイントではない（ポイント間の返球・隣のコート・物音）
   const FAULT_LOUDER_DB = 7.0; // 1st がこれより大きければ、後ろはセカンドサーブではない（物音など）。セカンドは軽く打つので 1st より小さく聞こえる
   // ポイントの合間にカメラの近くでボールを拾う音・足音・ボールつきが 1〜2 秒おきに続くと、前のラリーと次のサーブが
   // つながってしまう（実際の試合動画で、ポイント間が 12 秒しかない場面）。大きな打球（手前の選手の打球）が
@@ -248,6 +249,7 @@
         i++;
         continue;
       }
+      if (g.length >= 2 && loudest < loud - QUIET_POINT_DB) continue;
       if (g.length >= st.minHits || (g.length === 1 && st.keepServeOnly && isServe(g))) {
         const p = part(g, false);
         points.push({ start: p.start, end: p.end, hits: p.hits, parts: [p] });
