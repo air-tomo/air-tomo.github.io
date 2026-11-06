@@ -1,0 +1,21 @@
+{
+  "name": "tennis-cut-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "試合動画からポイントだけを切り出すアプリ（cut/ を Capacitor で iOS / Android アプリにしたもの）",
+  "scripts": {
+    "build": "node build.js",
+    "android": "npm run build && npx cap sync android",
+    "ios": "npm run build && npx cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.6.0",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}
