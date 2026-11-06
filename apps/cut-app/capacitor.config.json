@@ -1,0 +1,6 @@
+{
+  "appId": "io.github.airtomo.tenniscut",
+  "appName": "テニス切り出し",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

@@ -503,6 +503,14 @@
 
   $('shareBtn').addEventListener('click', async function () {
     const f = state.outFile;
+    if (window.NativeSave) {      // アプリ（apps/cut-app/native.js）: 端末に保存して OS の共有画面を開く
+      const b = $('shareBtn'), label = b.textContent;
+      b.disabled = true;
+      try { await window.NativeSave(f, function (r) { b.textContent = '準備中 ' + Math.round(r * 100) + '%'; }); }
+      catch (e) { showError('保存に失敗しました: ' + (e.message || e)); }
+      b.disabled = false; b.textContent = label;
+      return;
+    }
     if (navigator.canShare && navigator.canShare({ files: [f] })) {
       try { await navigator.share({ files: [f] }); } catch (e) { /* キャンセル */ }
     } else {
