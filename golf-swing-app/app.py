@@ -130,7 +130,7 @@ def upload():
     if mode == "tennis":
         settings = tennis.TennisSettings(
             pre_sec=_float_arg("pre_sec", 1.5, 0, 15),
-            post_sec=_float_arg("post_sec", 2.0, 0, 15),
+            post_sec=_float_arg("post_sec", 3.5, 0, 15),
             sensitivity=int(_float_arg("sensitivity", 6, 1, 10)),
             max_shot_gap_sec=_float_arg("max_shot_gap_sec", 5.0, 1, 15),
             min_hits=int(_float_arg("min_hits", 2, 1, 10)),
