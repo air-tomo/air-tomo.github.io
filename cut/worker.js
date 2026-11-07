@@ -8,7 +8,8 @@ importScripts('mp4.js');
 const OUTPUT_DIR = 'outputs';
 
 self.onmessage = async function (e) {
-  const { file, segments, name } = e.data;
+  const { segments, name } = e.data;
+  const file = e.data.file && e.data.file.remote ? MP4.urlFile(e.data.file.url, e.data.file.size, e.data.file.name, e.data.file.type) : e.data.file;
   let handle = null, fileHandle = null;
   try {
     try {

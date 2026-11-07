@@ -87,13 +87,15 @@
 
   // ---- 1. 動画を選んで解析 ----
 
-  $('file').addEventListener('change', function () {
-    const f = $('file').files[0];
+  $('file').addEventListener('change', function () { setFile($('file').files[0]); });
+  // アプリ（apps/cut-app/native.js）が写真ライブラリから受け取った動画もここに来る
+  window.CutApp = { setFile: function (f) { setFile(f); } };
+  function setFile(f) {
     state.file = f || null;
     $('fileLabel').textContent = f ? f.name + '（' + formatSize(f.size) + '）' : 'タップして動画を選択';
     $('fileLabel').classList.toggle('selected', !!f);
     $('loadBtn').disabled = !f;
-  });
+  }
 
   function formatSize(bytes) {
     return bytes >= 1024 * 1024 * 1024 ? (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB' : (bytes / 1024 / 1024).toFixed(1) + ' MB';
@@ -179,8 +181,8 @@
       await new Promise(function (r) { setTimeout(r, 0); });
       state.prep = Detect.prepare(Detect.envelope(acc));
 
-      if (state.srcUrl) URL.revokeObjectURL(state.srcUrl);
-      state.srcUrl = URL.createObjectURL(state.file);
+      if (state.srcUrl && state.srcUrl.indexOf('blob:') === 0) URL.revokeObjectURL(state.srcUrl);
+      state.srcUrl = state.file.remote ? state.file.url : URL.createObjectURL(state.file);
       $('srcVideo').src = state.srcUrl;
       releaseWake();
       redetect();
@@ -441,7 +443,7 @@
         else if (m.type === 'error') { worker.terminate(); reject(new Error(m.message)); }
       };
       worker.onerror = function (e) { worker.terminate(); reject(new Error(e.message || '書き出しに失敗しました')); };
-      worker.postMessage({ file: state.file, segments: segments, name: name });
+      worker.postMessage({ file: state.file.remote ? state.file.toMessage() : state.file, segments: segments, name: name });
     });
   }
 
