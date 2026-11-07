@@ -21,10 +21,8 @@
   // ブラウザの選択画面は動画をブラウザ用に変換するので、長い試合だと数分待たされる
   if (C.getPlatform && C.getPlatform() === 'ios') {
     const Picker = C.registerPlugin('VideoPicker');
-    document.addEventListener('click', async function (e) {
-      const label = e.target.closest && e.target.closest('#fileLabel');
-      if (!label || !window.CutApp || !window.MP4) return;
-      e.preventDefault();
+    window.NativePick = async function () {
+      const label = document.getElementById('fileLabel');
       const before = label.textContent;
       label.textContent = '写真ライブラリを開いています…';
       const sub = await Picker.addListener('loading', function () { label.textContent = '動画を読み込んでいます…'; });
@@ -36,7 +34,7 @@
         label.textContent = before;
         alert(err.message || String(err));
       } finally { sub.remove(); }
-    }, true);
+    };
   }
 
   // 大きな動画でもメモリを使いすぎないよう、4MB ずつ書く

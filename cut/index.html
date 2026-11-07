@@ -91,6 +91,34 @@
   .bottom .inner { max-width: 600px; margin: 0 auto; }
   .result video { width: 100%; border-radius: 10px; background: #000; margin-bottom: 10px; }
   .native-app #downloadLink { display: none; }  /* アプリでは「写真に保存・共有」だけ */
+  .native-app #modes { display: none; }         /* アプリはテニス専用 */
+  button.file-btn { width: 100%; background: transparent; font: inherit; font-size: 1rem; }
+  button.link { background: none; border: 0; color: var(--accent); font: inherit; font-size: .9rem; padding: 10px 0 0; cursor: pointer; display: block; }
+  body:not(.mode-tennis) .tennis-only { display: none; }
+  /* 撮り方ガイド（下から出るシート） */
+  .sheet-back { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: var(--card); width: 100%; max-width: 600px; max-height: 92vh; overflow-y: auto; border-radius: 18px 18px 0 0;
+           padding: 18px 18px calc(16px + env(safe-area-inset-bottom)); animation: up .22s ease-out; }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet h2 { font-size: 1.1rem; margin: 2px 0 12px; }
+  .guide-art { display: flex; gap: 8px; margin-bottom: 10px; }
+  .guide-art figure { flex: 1; margin: 0; background: var(--bg); border-radius: 12px; padding: 6px 6px 8px; }
+  .guide-art svg { width: 100%; height: auto; display: block; }
+  .guide-art figcaption { font-size: .72rem; color: var(--muted); text-align: center; }
+  .g-ground { stroke: var(--muted); stroke-width: 1.5; } .g-courtline { stroke: #2f6e9e; stroke-width: 5; } .g-netl { stroke: var(--text); stroke-width: 2; }
+  .g-screen { fill: #3b4a3f; } .g-court { fill: #2f6e9e; } .g-line { fill: none; stroke: #fff; stroke-width: 1.4; }
+  .g-net { fill: none; stroke: #e8ece9; stroke-width: 1.6; } .g-pole { stroke: var(--muted); stroke-width: 3; }
+  .g-phone { fill: var(--accent); } .g-view { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 3; }
+  .g-dim { stroke: var(--accent); stroke-width: 1.2; } .g-txt { fill: var(--accent); font-size: 11px; font-weight: 700; }
+  .g-small { fill: var(--muted); font-size: 8px; }
+  .checks { list-style: none; padding: 0; margin: 0 0 4px; }
+  .checks li { position: relative; padding: 7px 0 7px 30px; border-bottom: 1px solid var(--border); font-size: .93rem; line-height: 1.45; }
+  .checks li::before { content: "✓"; position: absolute; left: 4px; top: 6px; width: 20px; height: 20px; border-radius: 10px; background: var(--accent);
+                       color: var(--accent-text); font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .sheet .primary { margin-top: 12px; }
+  .again { display: flex; align-items: center; gap: 8px; font-size: .88rem; color: var(--muted); margin-top: 12px; }
+  .again input { width: 20px; height: 20px; accent-color: var(--accent); }
+  .sheet .link { margin: 4px auto 0; }
 </style>
 </head>
 <body>
@@ -105,15 +133,59 @@
       <button type="button" data-mode="tennis">🎾 テニス試合</button>
     </div>
     <div class="card">
-      <label class="file-btn" id="fileLabel" for="file">タップして動画を選択</label>
+      <button type="button" class="file-btn" id="fileLabel">タップして動画を選択</button>
       <!-- QuickTime を明示すると、iPhone が選んだ動画を変換せずに渡しやすい -->
       <input type="file" id="file" accept="video/quicktime,video/mp4,video/x-m4v,video/*,.mov,.mp4,.m4v">
+      <button type="button" class="link tennis-only" id="guideLink">📐 精度が上がる撮り方を見る</button>
       <p class="hint">動画は iPhone の外に送信（アップロード）されず、この画面の中だけで処理します。<br>
         動画を選んだあと「準備中」の表示が長く続くのは、iPhone 側の処理です（iCloud から元の動画をダウンロード、または互換形式への変換）。
         長い試合動画は、先に「写真」アプリの共有 →「"ファイル"に保存」してから、ここで「ファイル」から選ぶと待ち時間が短く、画質もそのままです。</p>
     </div>
     <button type="button" class="primary" id="loadBtn" disabled>読み込んで検出する</button>
   </section>
+
+  <!-- 撮り方ガイド（テニス・動画を選ぶ前） -->
+  <div class="sheet-back" id="guide" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+      <h2 id="guideTitle">この撮り方で、精度がぐっと上がります</h2>
+      <div class="guide-art">
+        <figure>
+          <svg viewBox="0 0 200 120" role="img" aria-label="横から見た図: コートの後ろ、高さ 1.8m 以上にスマホを固定">
+            <line x1="6" y1="100" x2="196" y2="100" class="g-ground"/>
+            <line x1="46" y1="100" x2="190" y2="100" class="g-courtline"/>
+            <line x1="118" y1="100" x2="118" y2="88" class="g-netl"/>
+            <line x1="24" y1="100" x2="24" y2="40" class="g-pole"/>
+            <rect x="16" y="30" width="16" height="11" rx="2.5" class="g-phone"/>
+            <path d="M32 36 L190 98 M32 36 L46 99" class="g-view"/>
+            <path d="M10 100 L10 36" class="g-dim"/><path d="M7 36 L13 36 M7 100 L13 100" class="g-dim"/>
+            <text x="14" y="24" class="g-txt">1.8m 以上</text>
+            <text x="46" y="114" class="g-small">手前のベースライン</text><text x="150" y="114" class="g-small">奥</text>
+          </svg>
+          <figcaption>横から見た図</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 200 120" role="img" aria-label="画面の見え方: コート全体が横向きの画面に収まる">
+            <rect x="4" y="8" width="192" height="104" rx="8" class="g-screen"/>
+            <path d="M38 102 L162 102 L132 38 L68 38 Z" class="g-court"/>
+            <path d="M38 102 L162 102 L132 38 L68 38 Z M52 102 L75 38 M148 102 L125 38 M56 90 L144 90 M71 49 L129 49 M100 90 L100 49" class="g-line"/>
+            <path d="M58 64 L142 64 M58 64 L58 57 M142 64 L142 57 M58 57 L142 57" class="g-net"/>
+          </svg>
+          <figcaption>画面の見え方（両方のベースラインが入る）</figcaption>
+        </figure>
+      </div>
+      <ul class="checks">
+        <li><b>コートの真後ろ</b>から（センター付近）</li>
+        <li><b>高さ 1.8m 以上</b>：フェンスにホルダーで固定、または三脚</li>
+        <li><b>コート全体</b>（奥のベースラインまで）が入るように</li>
+        <li><b>横向き・固定</b>で撮る（手持ちは使えません）</li>
+        <li><b>音あり</b>で撮る（打球音でポイントを区切ります）</li>
+      </ul>
+      <p class="hint">低い位置や斜めからでも切り出しはできますが、落下位置（どこに何% 落ちたか）の精度が下がります。</p>
+      <button type="button" class="primary" id="guidePick">動画を選ぶ</button>
+      <label class="again"><input type="checkbox" id="guideSkip"> 次からは表示しない</label>
+      <button type="button" class="link" id="guideClose">閉じる</button>
+    </div>
+  </div>
 
   <!-- 処理中 -->
   <section class="card" id="stepProgress" hidden>
