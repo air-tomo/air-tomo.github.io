@@ -66,6 +66,27 @@
     };
   }
 
+  /*
+   * アプリ（iOS）で写真ライブラリから受け取った動画: 端末内のファイルを URL で部分読み出し（Range）する。
+   * File と同じ形（size・name・type・slice().arrayBuffer()）なので fileReader などにそのまま渡せる。
+   * Worker には { remote: true, url, size, name, type } を送り、Worker 側でもう一度作る。
+   */
+  function urlFile(url, size, name, type) {
+    const get = async function (start, end) {
+      const r = await fetch(url, { headers: { Range: 'bytes=' + start + '-' + (end - 1) } });
+      if (!r.ok) throw new Error('動画を読めませんでした (' + r.status + ')');
+      const buf = await r.arrayBuffer();
+      // 部分読み出しに応じず全体が返ってきた場合
+      return r.status === 206 || buf.byteLength === end - start ? buf : buf.slice(start, end);
+    };
+    return {
+      remote: true, url: url, size: size, name: name, type: type || 'video/quicktime',
+      slice: function (start, end) { end = Math.min(end == null ? size : end, size); return { arrayBuffer: function () { return get(start, end); } }; },
+      arrayBuffer: function () { return get(0, size); },
+      toMessage: function () { return { remote: true, url: url, size: size, name: name, type: type }; },
+    };
+  }
+
   function children(b, start, end) {
     const out = [];
     let o = start;
@@ -616,7 +637,7 @@
   }
 
   const MP4 = {
-    fileReader: fileReader, parse: parse, aacConfig: aacConfig, adts: adts, mux: mux, firstGE: firstGE,
+    fileReader: fileReader, urlFile: urlFile, parse: parse, aacConfig: aacConfig, adts: adts, mux: mux, firstGE: firstGE,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = MP4;
   else root.MP4 = MP4;
