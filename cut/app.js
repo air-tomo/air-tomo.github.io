@@ -71,6 +71,7 @@
 
   function setMode(mode) {
     state.mode = mode;
+    document.body.classList.toggle('mode-tennis', mode === 'tennis');
     save('cut.mode', mode);
     $('title').textContent = TEXT[mode].title;
     $('lead').textContent = TEXT[mode].lead;
@@ -86,6 +87,30 @@
   });
 
   // ---- 1. 動画を選んで解析 ----
+
+  // 動画を選ぶ: テニスでは最初に撮り方ガイドを出す（「次からは表示しない」まで）。
+  // アプリ（apps/cut-app/native.js）は NativePick で写真ライブラリから変換なしで受け取る
+  function pickVideo() {
+    if (window.NativePick) window.NativePick();
+    else $('file').click();
+  }
+  function showGuide(thenPick) {
+    state.guidePick = thenPick;
+    $('guidePick').textContent = thenPick ? '動画を選ぶ' : 'わかった';
+    $('guide').hidden = false;
+  }
+  function closeGuide() {
+    if ($('guideSkip').checked) save('cut.guideSeen', true);
+    $('guide').hidden = true;
+  }
+  $('fileLabel').addEventListener('click', function () {
+    if (state.mode === 'tennis' && !load('cut.guideSeen')) showGuide(true);
+    else pickVideo();
+  });
+  $('guideLink').addEventListener('click', function () { showGuide(false); });
+  $('guidePick').addEventListener('click', function () { const p = state.guidePick; closeGuide(); if (p) pickVideo(); });
+  $('guideClose').addEventListener('click', closeGuide);
+  $('guide').addEventListener('click', function (e) { if (e.target === $('guide')) closeGuide(); });
 
   $('file').addEventListener('change', function () { setFile($('file').files[0]); });
   // アプリ（apps/cut-app/native.js）が写真ライブラリから受け取った動画もここに来る
@@ -528,5 +553,6 @@
     show('stepSelect');
   });
 
-  setMode(load('cut.mode') === 'tennis' ? 'tennis' : 'golf');
+  // アプリはテニス専用
+  setMode(document.documentElement.classList.contains('native-app') || load('cut.mode') === 'tennis' ? 'tennis' : 'golf');
 })();
