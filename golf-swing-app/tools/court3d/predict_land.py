@@ -30,8 +30,8 @@ def landing(p0, v0, k=0.0204, g=9.81, dt=1 / 300, tmax=4.0):
     p = np.array(p0, float); v = np.array(v0, float); t = 0.0
     while t < tmax:
         a = -k * np.linalg.norm(v) * v + np.array([0, 0, -g]); vn = v + a * dt; pn = p + vn * dt
-        if pn[2] <= 0 and vn[2] < 0:
-            s = p[2] / max(1e-9, p[2] - pn[2]); return p + (pn - p) * s, t + dt * s
+        if pn[2] <= 0.033 and vn[2] < 0:                 # the ball's centre is 3.3 cm up when it touches the ground
+            s = (p[2] - 0.033) / max(1e-9, p[2] - pn[2]); return p + (pn - p) * s, t + dt * s
         p, v, t = pn, vn, t + dt
     return None, None
 

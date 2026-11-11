@@ -8,7 +8,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import predict_land
 MATCH, CAM, ENV, OUT = sys.argv[1:5]
 cam = np.load(CAM); K, R, t, Hm = cam["K"], cam["R"], cam["t"], cam["H"]; Hinv = np.linalg.inv(Hm)
-def ground(u, v): return cv2.perspectiveTransform(np.array([[[u, v]]], float), Hinv)[0, 0]
+BALL_R = 0.033                                  # the detector finds the ball's centre, 3.3 cm above the ground
+def ground(u, v):
+    """court point under the ball whose centre is at pixel (u, v) on the ground: the camera ray crosses the plane z = BALL_R.
+    (Reading the pixel on the ground plane put far bounces 1.5 m too long with a 0.7 m-high camera.)"""
+    Rt = R.T; C = -Rt @ t; d = Rt @ np.linalg.inv(K) @ np.array([u, v, 1.0])
+    if abs(d[2]) < 1e-9: return cv2.perspectiveTransform(np.array([[[u, v]]], float), Hinv)[0, 0]
+    s_ = (BALL_R - C[2]) / d[2]; p = C + s_ * d
+    return p[:2]
 def proj(X): X = np.atleast_2d(X); p = (K @ (R @ X.T + t[:, None])).T; return p[:, :2] / p[:, 2:]
 # pixel sizes scale with the focal length; rows are measured from the net top (tuned on IMG_0131: f 1637, net top at row 446)
 PX = K[0, 0] / 1637.0
@@ -76,7 +83,7 @@ def serve_speed(P, bounce, hit, server_y=-0.5):
     obs = [(tt, x, y) for tt, x, y in P if hit + 0.02 < tt < bounce["t"] - 0.01]
     if len(obs) < 5: return None
     ts = np.array([o[0] for o in obs]) - hit; uv = np.array([[o[1], o[2]] for o in obs])
-    tb = bounce["t"] - hit; gb = np.array(bounce["court"] + [0.0])
+    tb = bounce["t"] - hit; gb = np.array(bounce["court"] + [BALL_R])
     def res(q):
         p0, v0 = q[:3], q[3:]
         Pp = simulate(p0, v0, np.append(ts, tb))

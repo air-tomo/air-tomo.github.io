@@ -8,6 +8,7 @@
 (function (root) {
   'use strict';
 
+  const BALL_R = 0.033;   // ボールの半径 (m)
   const NET_Y = 11.885, SERVICE_N = 5.485, SERVICE_F = 18.285, BASE_F = 23.77, SINGLES = 4.115;
 
   // ---- 行列とカメラ ----
@@ -36,7 +37,17 @@
     const px = cam.K[0][0] / 1637, netTop = pr([0, NET_Y, 0.914])[1];
     return {
       px: px, highRow: netTop - 186 * px, lowRow: netTop - 46 * px,   // highRow は analyzeClip（1 ポイント用）だけが使う
-      ground: function (u, v) { return applyH(Hinv, u, v); },
+      // 検出位置はボールの中心（地面から 3.3cm）。視線が高さ 3.3cm の面と交わる点を地面の位置とする
+      // （地面の面で読むと、低いカメラでは奥のバウンドが 1.5m 遠くに出ていた）
+      ground: function (u, v) {
+        const R = cam.R, K = cam.K, t = cam.t;
+        const C = [0, 1, 2].map(function (j) { return -(R[0][j] * t[0] + R[1][j] * t[1] + R[2][j] * t[2]); });
+        const kx = (u - K[0][2]) / K[0][0], ky = (v - K[1][2]) / K[1][1];
+        const d = [0, 1, 2].map(function (j) { return R[0][j] * kx + R[1][j] * ky + R[2][j]; });
+        if (Math.abs(d[2]) < 1e-9) return applyH(Hinv, u, v);
+        const s = (BALL_R - C[2]) / d[2];
+        return [C[0] + s * d[0], C[1] + s * d[1]];
+      },
       /* 画素 (u, v) を通る視線が奥行き y = yPlane の面と交わる点の高さ (m) */
       rayHeight: function (u, v, yPlane) {
         const R = cam.R, K = cam.K, t = cam.t;
@@ -179,7 +190,7 @@
     serverY = serverY == null ? -0.5 : serverY;   // サーバーの位置: -0.5 = 手前のベースラインの後ろ、24.3 = 奥のベースラインの後ろ
     const obs = P.filter(function (q) { return hit + 0.02 < q[0] && q[0] < bounce.t - 0.01; });
     if (obs.length < 5) return null;
-    const ts = obs.map(function (q) { return q[0] - hit; }), tb = bounce.t - hit, gb = [bounce.court[0], bounce.court[1], 0];
+    const ts = obs.map(function (q) { return q[0] - hit; }), tb = bounce.t - hit, gb = [bounce.court[0], bounce.court[1], BALL_R];
     const fn = function (q) {
       const Pp = simulate(q.slice(0, 3), q.slice(3), ts.concat([tb]));
       const r = [];
