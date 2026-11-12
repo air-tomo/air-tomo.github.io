@@ -1,0 +1,22 @@
+# テスト（tests/run_all.sh）。結果は Actions のログだけで、何も公開しない。
+name: tests
+on:
+  push:
+    paths: ['cut/**', 'golf-swing-app/**', 'apps/cut-app/**', 'tests/**', '.github/workflows/tests.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install numpy scipy opencv-python-headless
+      - run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - run: bash tests/run_all.sh

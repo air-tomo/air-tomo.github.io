@@ -2,3 +2,7 @@ __pycache__/
 .DS_Store
 __pycache__/
 .DS_Store
+
+# test runs
+apps/cut-app/www/_test_match.mp4
+node_modules/
