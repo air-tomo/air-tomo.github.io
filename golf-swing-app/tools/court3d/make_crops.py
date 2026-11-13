@@ -16,15 +16,29 @@ ap.add_argument("video"); ap.add_argument("tn_dir"); ap.add_argument("match"); a
 ap.add_argument("--every", type=int, default=2, help="one positive sample every N labelled frames")
 ap.add_argument("--neg", type=float, default=0.25, help="negatives per positive")
 ap.add_argument("--clips", default="", help="comma separated clip numbers (default all)")
+def rect(value):
+    try:
+        x0, y0, x1, y1 = map(int, value.split(","))
+        if not (0 <= x0 < x1 <= 1920 and 0 <= y0 < y1 <= 1080):
+            raise ValueError
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected x0,y0,x1,y1 within 1920x1080") from exc
+    return x0, y0, x1, y1
+
+ap.add_argument("--exclude", action="append", type=rect, default=[], help="exclude crops intersecting x0,y0,x1,y1 (repeatable)")
 a = ap.parse_args()
 CH, CW, FR, W, H = 192, 288, 30, 1920, 1080
 rng = np.random.default_rng(0)
 M = json.load(open(a.match))
 
 
+def excluded(x, y, w=1, h=1):
+    return any(x < x1 and x + w > x0 and y < y1 and y + h > y0 for x0, y0, x1, y1 in a.exclude)
+
+
 def trusted(res):
     """{frame index in the clip decode: (x, y)}; res[j] is frame j + 2"""
-    pts = {j + 2: (r[1], r[2]) for j, r in enumerate(res) if r[1] is not None}
+    pts = {j + 2: (r[1], r[2]) for j, r in enumerate(res) if r[1] is not None and not excluded(r[1], r[2])}
     keep = {}
     for i, (x, y) in pts.items():
         nb = [pts[k] for k in (i - 1, i + 1) if k in pts]
@@ -38,7 +52,7 @@ def trusted(res):
             if np.hypot(x1 - x0, y1 - y0) / (q - p) < 60:
                 for k in range(p + 1, q):
                     s = (k - p) / (q - p); keep[k] = (x0 + (x1 - x0) * s, y0 + (y1 - y0) * s)
-    return keep
+    return {i: (x, y) for i, (x, y) in keep.items() if not excluded(x, y)}
 
 
 X, Y, T = [], [], []
@@ -57,18 +71,21 @@ for k in clips:
         if len(b) < W * H * 3: break
         ring = (ring + [np.frombuffer(b, np.uint8).reshape(H, W, 3)])[-3:]
         if len(ring) == 3:
-            stack = np.concatenate([ring[2], ring[1], ring[0]], 2)        # newest first
             if i in lab and (i % a.every == 0):
                 x, y = lab[i]
                 ox = int(np.clip(x - rng.integers(16, CW - 16), 0, W - CW)); oy = int(np.clip(y - rng.integers(16, CH - 16), 0, H - CH))
-                X.append(stack[oy:oy + CH, ox:ox + CW].copy()); Y.append((x - ox, y - oy)); T.append(t0 + i / FR); npos += 1
+                if not excluded(ox, oy, CW, CH):
+                    X.append(np.concatenate([f[oy:oy + CH, ox:ox + CW] for f in reversed(ring)], 2))
+                    Y.append((x - ox, y - oy)); T.append(t0 + i / FR); npos += 1
                 if rng.random() < a.neg:                                     # a crop elsewhere in the same frames
                     for _ in range(20):
                         ox = int(rng.integers(0, W - CW)); oy = int(rng.integers(H // 4, H - CH))
-                        if not (ox - 20 < x < ox + CW + 20 and oy - 20 < y < oy + CH + 20): break
-                    X.append(stack[oy:oy + CH, ox:ox + CW].copy()); Y.append((-1, -1)); T.append(t0 + i / FR)
+                        if excluded(ox, oy, CW, CH) or (ox - 20 < x < ox + CW + 20 and oy - 20 < y < oy + CH + 20): continue
+                        X.append(np.concatenate([f[oy:oy + CH, ox:ox + CW] for f in reversed(ring)], 2))
+                        Y.append((-1, -1)); T.append(t0 + i / FR)
+                        break
         i += 1
-    p.wait()
+    if p.wait() != 0: raise RuntimeError(f"ffmpeg failed on clip {k}")
     print("clip", k, "labelled", len(lab), "samples", npos, flush=True)
 np.savez(a.out, X=np.array(X, np.uint8), Y=np.array(Y, np.float32), T=np.array(T, np.float32))
 print("total", len(X), "->", a.out)

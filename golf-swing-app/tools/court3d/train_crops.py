@@ -14,7 +14,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--train", nargs="+", required=True); ap.add_argument("--val", nargs="+", required=True)
 ap.add_argument("--hours", type=float, default=5); ap.add_argument("--batch", type=int, default=16)
 ap.add_argument("--out", default="ball_small"); ap.add_argument("--init", default="")
+ap.add_argument("--device", choices=["cpu", "mps", "cuda"], default="cpu")
 a = ap.parse_args()
+dev = torch.device(a.device)
 torch.set_num_threads(4); torch.manual_seed(0); rng = np.random.default_rng(0)
 WH, WW, SIG = 160, 256, 2.5
 
@@ -46,28 +48,30 @@ def window(x, y, train):
     if train:
         if rng.random() < 0.5: w = w[:, ::-1]; t = t[:, ::-1]
         w = np.clip(w * rng.uniform(0.6, 1.4) + rng.uniform(-0.15, 0.15), 0, 1)
-    return np.ascontiguousarray(w.transpose(2, 0, 1)), np.ascontiguousarray(t)
+    return np.ascontiguousarray(w.transpose(2, 0, 1)), np.ascontiguousarray(t, dtype=np.float32)
 
 
-V = [window(Xv[i], Yv[i], False) for i in range(len(Xv))]
-Vx = torch.from_numpy(np.stack([v[0] for v in V])); Vt = np.stack([v[1] for v in V])
 
 
 def evaluate(m, tol=4.0):
     m.eval(); tp = fp = fn = 0
-    with torch.no_grad():
-        pr = np.concatenate([torch.sigmoid(m(Vx[i:i + 32])).numpy() for i in range(0, len(Vx), 32)])
-    for p, t in zip(pr, Vt):
-        g = np.unravel_index(np.argmax(t), t.shape) if t.max() > 0.5 else None; q = peak(p)
-        if g is None: fp += q is not None
-        elif q is None: fn += 1
-        elif np.hypot(q[0] - g[1], q[1] - g[0]) <= tol: tp += 1
-        else: fp += 1; fn += 1
+    with torch.inference_mode():
+        for start in range(0, len(Xv), a.batch):
+            batch = [window(Xv[i], Yv[i], False) for i in range(start, min(start + a.batch, len(Xv)))]
+            x = torch.from_numpy(np.stack([v[0] for v in batch])).to(dev)
+            pr = torch.sigmoid(m(x)).cpu().numpy()
+            for p, (_, t) in zip(pr, batch):
+                g = np.unravel_index(np.argmax(t), t.shape) if t.max() > 0.5 else None
+                q = peak(p)
+                if g is None: fp += q is not None
+                elif q is None: fn += 1
+                elif np.hypot(q[0] - g[1], q[1] - g[0]) <= tol: tp += 1
+                else: fp += 1; fn += 1
     m.train(); P = tp / max(1, tp + fp); R = tp / max(1, tp + fn)
     return {"precision": round(P, 3), "recall": round(R, 3), "f1": round(2 * P * R / max(1e-9, P + R), 3)}
 
 
-m = SmallNet()
+m = SmallNet().to(dev)
 if a.init: m.load_state_dict(torch.load(a.init, map_location="cpu", weights_only=True))
 opt = torch.optim.AdamW(m.parameters(), 2e-3, weight_decay=1e-4)
 end = time.time() + a.hours * 3600; step = 0; best = -1; t_last = time.time(); run = 0
@@ -75,7 +79,7 @@ print("start", evaluate(m), flush=True)
 while time.time() < end:
     idx = rng.integers(0, len(Xt), a.batch)
     B = [window(Xt[i], Yt[i], True) for i in idx]
-    x = torch.from_numpy(np.stack([b[0] for b in B])); t = torch.from_numpy(np.stack([b[1] for b in B]))
+    x = torch.from_numpy(np.stack([b[0] for b in B])).to(dev); t = torch.from_numpy(np.stack([b[1] for b in B])).to(dev)
     lr = 2e-3 * max(0.05, 1 - (time.time() - (end - a.hours * 3600)) / (a.hours * 3600))
     for g in opt.param_groups: g["lr"] = lr
     l = loss_fn(m(x), t); opt.zero_grad(); l.backward(); opt.step(); step += 1; run = 0.98 * run + 0.02 * l.item()
@@ -84,7 +88,7 @@ while time.time() < end:
         print("step", step, "loss %.4f" % run, "lr %.5f" % lr, r, flush=True)
         torch.save(m.state_dict(), a.out + "_last.pt")       # resume with --init OUT_last.pt after a restart
         if r["f1"] > best: best = r["f1"]; torch.save(m.state_dict(), a.out + ".pt")
-m.load_state_dict(torch.load(a.out + ".pt", map_location="cpu", weights_only=True)); m.eval()
+m.cpu(); m.load_state_dict(torch.load(a.out + ".pt", map_location="cpu", weights_only=True)); m.eval()
 
 
 class Export(nn.Module):
