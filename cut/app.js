@@ -554,5 +554,7 @@
   });
 
   // アプリはテニス専用
-  setMode(document.documentElement.classList.contains('native-app') || load('cut.mode') === 'tennis' ? 'tennis' : 'golf');
+  // ?mode=tennis（ベータ案内ページからのリンク）でもテニスから始める
+  const askTennis = /[?&]mode=tennis\b/.test(location.search);
+  setMode(document.documentElement.classList.contains('native-app') || askTennis || load('cut.mode') === 'tennis' ? 'tennis' : 'golf');
 })();
