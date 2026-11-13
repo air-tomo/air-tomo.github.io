@@ -6,7 +6,7 @@
 
   const TEXT = {
     golf: { title: '⛳ ゴルフスイング自動切り抜き', lead: '練習動画から打球音でスイングを見つけ、1本の動画にまとめます。' },
-    tennis: { title: '🎾 テニス ポイント間カット', lead: '試合動画から打球音でラリーを見つけ、ポイント間の待ち時間を取り除きます。' },
+    tennis: { title: '🎾 テニス切り出し', lead: '試合動画から、ポイントだけを自動でつないだ動画を作ります。' },
   };
   const SETTINGS = {
     golf: [
@@ -556,5 +556,6 @@
   // アプリはテニス専用
   // ?mode=tennis（ベータ案内ページからのリンク）でもテニスから始める
   const askTennis = /[?&]mode=tennis\b/.test(location.search);
+  if (askTennis) document.documentElement.classList.add('tennis-link');   // ベータ案内から来たらゴルフの切り替えを出さない
   setMode(document.documentElement.classList.contains('native-app') || askTennis || load('cut.mode') === 'tennis' ? 'tennis' : 'golf');
 })();
