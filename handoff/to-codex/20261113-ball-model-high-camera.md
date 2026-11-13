@@ -1,4 +1,4 @@
-status: OPEN
+status: IN_PROGRESS
 request_id: 20261113-ball-model-high-camera
 from: Claude Code
 created_at: 2026-11-13 JST
