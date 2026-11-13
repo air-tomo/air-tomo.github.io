@@ -91,7 +91,7 @@
   .bottom .inner { max-width: 600px; margin: 0 auto; }
   .result video { width: 100%; border-radius: 10px; background: #000; margin-bottom: 10px; }
   .native-app #downloadLink { display: none; }  /* アプリでは「写真に保存・共有」だけ */
-  .native-app #modes { display: none; }         /* アプリはテニス専用 */
+  .native-app #modes, .tennis-link #modes { display: none; }         /* アプリはテニス専用 */
   button.file-btn { width: 100%; background: transparent; font: inherit; font-size: 1rem; }
   button.link { background: none; border: 0; color: var(--accent); font: inherit; font-size: .9rem; padding: 10px 0 0; cursor: pointer; display: block; }
   body:not(.mode-tennis) .tennis-only { display: none; }
@@ -137,9 +137,8 @@
       <!-- QuickTime を明示すると、iPhone が選んだ動画を変換せずに渡しやすい -->
       <input type="file" id="file" accept="video/quicktime,video/mp4,video/x-m4v,video/*,.mov,.mp4,.m4v">
       <button type="button" class="link tennis-only" id="guideLink">📐 精度が上がる撮り方を見る</button>
-      <p class="hint">動画は iPhone の外に送信（アップロード）されず、この画面の中だけで処理します。<br>
-        動画を選んだあと「準備中」の表示が長く続くのは、iPhone 側の処理です（iCloud から元の動画をダウンロード、または互換形式への変換）。
-        長い試合動画は、先に「写真」アプリの共有 →「"ファイル"に保存」してから、ここで「ファイル」から選ぶと待ち時間が短く、画質もそのままです。</p>
+      <p class="hint">🔒 動画は端末の外に送りません。<br>
+        ⏱ 長い試合は、先に「写真」の共有 →「"ファイル"に保存」してから「ファイル」で選ぶと待ち時間が短くなります。</p>
     </div>
     <button type="button" class="primary" id="loadBtn" disabled>読み込んで検出する</button>
   </section>
