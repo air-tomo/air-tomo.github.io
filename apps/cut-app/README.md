@@ -1,4 +1,4 @@
-# テニス切り出しアプリ（iOS / Android）
+# Tennis Replay（iOS / Android）
 
 公開中のページ `cut/` を [Capacitor](https://capacitorjs.com/) でアプリにしたもの。中身はページと同じで、
 `npm run build` が `cut/` を `www/` にコピーし、アプリ用の `native.js`（端末に保存して共有画面を開く）を足す。

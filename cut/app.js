@@ -6,7 +6,7 @@
 
   const TEXT = {
     golf: { title: '⛳ ゴルフスイング自動切り抜き', lead: '練習動画から打球音でスイングを見つけ、1本の動画にまとめます。' },
-    tennis: { title: '🎾 テニス切り出し', lead: '試合動画から、ポイントだけを自動でつないだ動画を作ります。' },
+    tennis: { title: '🎾 Tennis Replay', lead: '試合動画から、ポイントだけを自動でつないだ動画を作ります。' },
   };
   const SETTINGS = {
     golf: [

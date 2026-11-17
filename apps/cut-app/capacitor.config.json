@@ -1,6 +1,6 @@
 {
-  "appId": "io.github.airtomo.tenniscut",
-  "appName": "テニス切り出し",
+  "appId": "io.github.airtomo.tennisreplay",
+  "appName": "Tennis Replay",
   "webDir": "www",
   "android": { "allowMixedContent": false }
 }
