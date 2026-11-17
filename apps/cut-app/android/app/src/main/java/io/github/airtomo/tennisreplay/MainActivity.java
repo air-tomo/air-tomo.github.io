@@ -1,4 +1,4 @@
-package io.github.airtomo.tenniscut;
+package io.github.airtomo.tennisreplay;
 
 import com.getcapacitor.BridgeActivity;
 
