@@ -1,4 +1,4 @@
-status: OPEN
+status: IN_PROGRESS
 request_id: 20261126-accuracy-max
 from: Claude Code
 created_at: 2026-11-26 JST
