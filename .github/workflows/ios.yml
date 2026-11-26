@@ -46,7 +46,25 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
-          KEY="$RUNNER_TEMP/AuthKey.p8"; printf '%s' "$ASC_KEY_P8" > "$KEY"
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          # 貼り付けで崩れた鍵（改行が空白・CRLF・余計な文字・BEGIN/END なし・base64 化）を正しい PEM に直す。中身は表示しない
+          printf '%s' "$ASC_KEY_P8" | python3 -c '
+          import sys, re, base64
+          t = sys.stdin.read()
+          t = t.replace("\\n", "\n")
+          m = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----(.*?)-----END [A-Z ]*PRIVATE KEY-----", t, re.S)
+          body = m.group(1) if m else t
+          if not m:
+              try:
+                  d = base64.b64decode(re.sub(r"[^A-Za-z0-9+/=]", "", t)).decode()
+                  m2 = re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----(.*?)-----END", d, re.S)
+                  if m2: body = m2.group(1)
+              except Exception: pass
+          b = re.sub(r"[^A-Za-z0-9+/=]", "", body)
+          base64.b64decode(b)
+          sys.stdout.write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(b[i:i+64] for i in range(0, len(b), 64)) + "\n-----END PRIVATE KEY-----\n")
+          ' > "$KEY"
+          echo "key: $(wc -l < "$KEY") lines (expected 6)"
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/App.xcarchive" "${AUTH[@]}" \
