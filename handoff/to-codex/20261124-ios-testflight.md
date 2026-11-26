@@ -1,4 +1,4 @@
-status: OPEN
+status: DONE
 request_id: 20261124-ios-testflight
 from: Claude Code
 created_at: 2026-11-24 JST
